@@ -1,7 +1,7 @@
 // Arquivo: App.tsx
-// Versão Final: Sistema Completo (Máscaras, Pagamento MP, Admin, Validações)
+// Versão Final: Sistema Completo (Rifa, Login, Admin, Pagamento)
 import React, { useState, FormEvent, useEffect } from 'react';
-import { UserPlus, ShoppingBag, GraduationCap, Menu, X, Instagram, Facebook, MessageCircle, CheckCircle, AlertCircle, Lock, LogOut, Database, Ticket, CreditCard } from 'lucide-react';
+import { UserPlus, ShoppingBag, GraduationCap, Menu, X, Instagram, Facebook, MessageCircle, CheckCircle, AlertCircle, Lock, LogOut, Database, Ticket, User, History, ArrowRight, LogIn } from 'lucide-react';
 
 // --- DEFINIÇÃO DE TIPOS ---
 
@@ -60,6 +60,22 @@ interface MentoriaLead {
   nivel: string;
   dificuldade: string;
   data_interesse: string;
+}
+
+interface ClienteUser {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string;
+}
+
+interface HistoricoItem {
+  numero: number;
+  status: string;
+  data_reserva: string;
+  nome_premio: string;
+  valor_numero: number;
+  imagem_url: string;
 }
 
 // --- FUNÇÃO DE MÁSCARA DE TELEFONE ---
@@ -150,7 +166,162 @@ const Home = ({ changePage }: HomeProps) => (
   </div>
 );
 
-// 2. Página de Cadastro
+// 2. Minha Conta (Login/Cadastro e Dashboard)
+const MinhaConta = ({ user, onLogin, onLogout, redirectAfterLogin }: { user: ClienteUser | null, onLogin: (u: ClienteUser) => void, onLogout: () => void, redirectAfterLogin?: () => void }) => {
+    const [view, setView] = useState<'login' | 'register'>('login');
+    const [formData, setFormData] = useState({ nome: '', email: '', telefone: '', senha: '' });
+    const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (user) fetchHistorico();
+    }, [user]);
+
+    const fetchHistorico = async () => {
+        if (!user) return;
+        try {
+            const res = await fetch(`http://localhost:3001/api/clientes/${user.id}/historico`);
+            if (res.ok) setHistorico(await res.json());
+        } catch (err) { console.error(err); }
+    };
+
+    const handleAuth = async (e: FormEvent) => {
+        e.preventDefault();
+        setLoading(true); setError('');
+        const endpoint = view === 'login' ? '/api/auth/login' : '/api/auth/register';
+        
+        try {
+            const res = await fetch(`http://localhost:3001${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message);
+
+            if (view === 'register') {
+                alert("Cadastro realizado! Faça login.");
+                setView('login');
+            } else {
+                onLogin(data); // Salva usuário no estado global
+                // Redireciona de volta para a rifa se necessário
+                if (redirectAfterLogin) redirectAfterLogin();
+            }
+        } catch (err: any) { setError(err.message); }
+        finally { setLoading(false); }
+    };
+
+    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const formatted = formatPhoneNumber(e.target.value);
+        setFormData({ ...formData, telefone: formatted });
+    };
+
+    // DASHBOARD (LOGADO)
+    if (user) {
+        return (
+            <div className="container mx-auto py-12 px-4">
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800">Olá, {user.nome}!</h2>
+                    <Button variant="danger" onClick={onLogout} className="text-sm"><LogOut size={16}/> Sair</Button>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-6">
+                    <Card className="p-6 md:col-span-1 h-fit">
+                        <h3 className="font-bold text-gray-600 mb-4 flex items-center gap-2"><User size={20}/> Meus Dados</h3>
+                        <p className="text-sm text-gray-500 mb-1"><strong>Email:</strong> {user.email}</p>
+                        <p className="text-sm text-gray-500"><strong>Telefone:</strong> {user.telefone}</p>
+                    </Card>
+
+                    <Card className="p-6 md:col-span-2">
+                        <h3 className="font-bold text-gray-600 mb-4 flex items-center gap-2"><History size={20}/> Meus Números e Rifas</h3>
+                        {historico.length === 0 ? (
+                            <p className="text-gray-400 text-center py-8">Você ainda não participou de nenhuma rifa.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {historico.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100 hover:shadow-sm transition">
+                                        <img src={item.imagem_url || "https://placehold.co/600x400"} alt="" className="w-12 h-12 object-cover rounded" />
+                                        <div className="flex-grow">
+                                            <p className="font-bold text-gray-800">{item.nome_premio}</p>
+                                            <p className="text-xs text-gray-500">Comprado em: {new Date(item.data_reserva).toLocaleDateString()}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="block font-bold text-lg text-pink-600">#{item.numero}</span>
+                                            <span className={`text-xs px-2 py-1 rounded font-bold ${item.status === 'Pago' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                {item.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Card>
+                </div>
+            </div>
+        );
+    }
+
+    // TELA DE LOGIN / REGISTRO
+    return (
+        <div className="container mx-auto py-12 px-4 flex justify-center">
+            <Card className="w-full max-w-md p-8">
+                <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">
+                    {view === 'login' ? 'Acesse sua Conta' : 'Crie sua Conta'}
+                </h2>
+                <p className="text-center text-gray-500 mb-6">
+                    {redirectAfterLogin ? 'Faça login para continuar sua compra.' : 'Para acompanhar suas rifas e prêmios.'}
+                </p>
+
+                <form onSubmit={handleAuth} className="space-y-4">
+                    {view === 'register' && (
+                        <div>
+                            <label className="text-xs font-bold text-gray-600">Nome</label>
+                            <input required type="text" className="w-full border rounded p-2 focus:border-pink-500 outline-none" 
+                                value={formData.nome} onChange={e=>setFormData({...formData, nome:e.target.value})} />
+                        </div>
+                    )}
+                    
+                    <div>
+                        <label className="text-xs font-bold text-gray-600">Email</label>
+                        <input required type="email" className="w-full border rounded p-2 focus:border-pink-500 outline-none" 
+                            value={formData.email} onChange={e=>setFormData({...formData, email:e.target.value})} />
+                    </div>
+
+                    {view === 'register' && (
+                        <div>
+                            <label className="text-xs font-bold text-gray-600">WhatsApp</label>
+                            <input required type="tel" className="w-full border rounded p-2 focus:border-pink-500 outline-none" 
+                                value={formData.telefone} onChange={handlePhoneChange} placeholder="(00) 00000-0000" />
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="text-xs font-bold text-gray-600">Senha</label>
+                        <input required type="password" className="w-full border rounded p-2 focus:border-pink-500 outline-none" 
+                            value={formData.senha} onChange={e=>setFormData({...formData, senha:e.target.value})} />
+                    </div>
+
+                    {error && <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</p>}
+
+                    <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? 'Processando...' : (view === 'login' ? 'Entrar' : 'Cadastrar')}
+                    </Button>
+                </form>
+
+                <div className="mt-6 text-center text-sm">
+                    {view === 'login' ? (
+                        <p>Não tem conta? <button onClick={() => setView('register')} className="text-pink-600 font-bold hover:underline">Cadastre-se</button></p>
+                    ) : (
+                        <p>Já tem conta? <button onClick={() => setView('login')} className="text-pink-600 font-bold hover:underline">Fazer Login</button></p>
+                    )}
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+// 3. Página de Cadastro de Consultora
 const Cadastro = () => {
   const [formData, setFormData] = useState({ nome: '', email: '', telefone: '', cidade: '' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -272,23 +443,22 @@ const Cadastro = () => {
   );
 };
 
-// 3. RIFAS
-const Rifas = () => {
+// 4. RIFAS (Com Login Obrigatório e Redirecionamento)
+const Rifas = ({ clientUser, onRedirectLogin }: { clientUser: ClienteUser | null, onRedirectLogin: () => void }) => {
   const [rifas, setRifas] = useState<Rifa[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [selectedRifa, setSelectedRifa] = useState<Rifa | null>(null);
   const [numerosOcupados, setNumerosOcupados] = useState<NumeroRifa[]>([]);
-  const [numeroSelecionado, setNumeroSelecionado] = useState<number | null>(null);
+  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   
-  const [compradorInfo, setCompradorInfo] = useState({ nome: '', telefone: '' });
   const [pagamentoStatus, setPagamentoStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
   useEffect(() => {
     fetch('http://localhost:3001/api/rifas')
       .then(res => res.json())
       .then(data => { setRifas(data); setLoading(false); })
-      .catch(err => console.error("Erro busca rifa", err));
+      .catch(err => console.error(err));
   }, []);
 
   useEffect(() => {
@@ -301,18 +471,30 @@ const Rifas = () => {
 
   const handleOpenRifa = (rifa: Rifa) => {
     setSelectedRifa(rifa);
-    setNumeroSelecionado(null);
+    setSelectedNumbers([]);
     setPagamentoStatus('idle');
   };
 
-  const handlePhoneChangeRifa = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatPhoneNumber(e.target.value); 
-    setCompradorInfo({ ...compradorInfo, telefone: formatted });
+  const toggleNumber = (num: number) => {
+    if (selectedNumbers.includes(num)) {
+      setSelectedNumbers(selectedNumbers.filter(n => n !== num));
+    } else {
+      setSelectedNumbers([...selectedNumbers, num]);
+    }
   };
 
+  // Esta função agora VERIFICA O LOGIN
   const handlePagar = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedRifa || !numeroSelecionado) return;
+    
+    // 1. Verificação de Login
+    if (!clientUser) {
+        // Se não tiver logado, manda pro login
+        onRedirectLogin(); 
+        return;
+    }
+
+    if (!selectedRifa || selectedNumbers.length === 0) return;
     setPagamentoStatus('loading');
 
     try {
@@ -320,11 +502,13 @@ const Rifas = () => {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                numero: numeroSelecionado,
-                nome: compradorInfo.nome,
-                telefone: compradorInfo.telefone,
-                valor: selectedRifa.valor_numero,
-                tituloRifa: selectedRifa.nome_premio
+                numeros: selectedNumbers,
+                // Usa os dados do cliente logado automaticamente
+                nome: clientUser.nome,
+                telefone: clientUser.telefone,
+                valorUnitario: selectedRifa.valor_numero,
+                tituloRifa: selectedRifa.nome_premio,
+                clienteId: clientUser.id
             })
         });
 
@@ -334,11 +518,10 @@ const Rifas = () => {
         }
 
         const data = await response.json();
-        
         if (data.link_pagamento) {
             window.location.href = data.link_pagamento;
         } else {
-            throw new Error("Link de pagamento não gerado");
+            throw new Error("Link não gerado");
         }
 
     } catch (err: any) {
@@ -348,34 +531,37 @@ const Rifas = () => {
   };
 
   const handleSimularPagamento = async () => {
-      if(!selectedRifa || !numeroSelecionado) return;
+      if(!selectedRifa || selectedNumbers.length === 0) return;
       await fetch('http://localhost:3001/api/simular-pagamento', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ rifaId: selectedRifa.id, numero: numeroSelecionado })
+          body: JSON.stringify({ rifaId: selectedRifa.id, numeros: selectedNumbers })
       });
-      alert("Simulação: Pagamento Aprovado! A página vai recarregar.");
+      alert("Simulação: Pagamento Aprovado para todos os números!");
       window.location.reload();
   };
 
   const renderGrid = () => {
     if (!selectedRifa) return null;
-    const grid = [];
+    const grid: JSX.Element[] = [];
+    
     for (let i = 1; i <= selectedRifa.total_numeros; i++) {
         const ocupado = numerosOcupados.find(n => n.numero === i);
+        const isSelected = selectedNumbers.includes(i);
+        
         let bgClass = "bg-white border-gray-300 text-gray-700 hover:bg-green-50 hover:border-green-500 cursor-pointer"; 
         
         if (ocupado) {
             bgClass = ocupado.status === 'Pago' 
-                ? "bg-red-500 text-white border-red-500 cursor-not-allowed" 
+                ? "bg-red-500 text-white border-red-500 cursor-not-allowed opacity-50" 
                 : "bg-yellow-400 text-yellow-900 border-yellow-400 cursor-not-allowed opacity-80"; 
-        } else if (numeroSelecionado === i) {
-            bgClass = "bg-green-600 text-white border-green-600 ring-2 ring-green-300 scale-110 shadow-lg"; 
+        } else if (isSelected) {
+            bgClass = "bg-green-600 text-white border-green-600 ring-2 ring-green-300 transform scale-105 shadow-md z-10"; 
         }
 
         grid.push(
-            <div key={i} onClick={() => !ocupado && setNumeroSelecionado(i)}
-                className={`w-10 h-10 md:w-12 md:h-12 border-2 rounded-lg flex items-center justify-center font-bold text-sm md:text-base transition-all duration-200 ${bgClass}`}>
+            <div key={i} onClick={() => !ocupado && toggleNumber(i)}
+                className={`w-10 h-10 md:w-12 md:h-12 border-2 rounded-lg flex items-center justify-center font-bold text-sm md:text-base transition-all duration-200 select-none ${bgClass}`}>
                 {i}
             </div>
         );
@@ -383,11 +569,13 @@ const Rifas = () => {
     return grid;
   };
 
+  const totalPagar = selectedRifa ? selectedNumbers.length * selectedRifa.valor_numero : 0;
+
   return (
     <div className="container mx-auto py-12 px-4 relative">
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold text-purple-700">Rifas Interativas</h2>
-        <p className="text-gray-600">Compre seu número e pague com Pix ou Cartão.</p>
+        <p className="text-gray-600">Escolha quantos números quiser e aumente suas chances!</p>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -395,15 +583,18 @@ const Rifas = () => {
           <Card key={rifa.id} className="flex flex-col h-full hover:shadow-xl transition duration-300">
              <div className="relative">
                 <img src={rifa.imagem_url || "https://placehold.co/600x400"} alt={rifa.nome_premio} className="w-full h-56 object-cover" />
-                <span className="absolute top-4 right-4 bg-white px-3 py-1 rounded-full text-xs font-bold shadow-sm">
-                   {rifa.numeros_vendidos}/{rifa.total_numeros} Vendidos
+                <span className="absolute top-4 right-4 bg-white px-3 py-1 rounded-full text-xs font-bold shadow-sm text-pink-600">
+                   R$ {Number(rifa.valor_numero).toFixed(2)} / nº
                 </span>
              </div>
              <div className="p-5 flex-grow flex flex-col">
                 <h3 className="text-xl font-bold text-gray-800 mb-2">{rifa.nome_premio}</h3>
-                <p className="text-3xl font-bold text-pink-600 mb-4">R$ {Number(rifa.valor_numero).toFixed(2)}</p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div className="bg-pink-600 h-2.5 rounded-full" style={{ width: `${(rifa.numeros_vendidos / rifa.total_numeros) * 100}%` }}></div>
+                </div>
+                <p className="text-sm text-gray-500 mb-4">{rifa.numeros_vendidos} vendidos de {rifa.total_numeros}</p>
                 <Button onClick={() => handleOpenRifa(rifa)} className="mt-auto w-full">
-                    <Ticket className="w-5 h-5" /> Ver Números
+                    <Ticket className="w-5 h-5" /> Escolher Números
                 </Button>
              </div>
           </Card>
@@ -411,71 +602,90 @@ const Rifas = () => {
       </div>
 
       {selectedRifa && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="bg-pink-600 text-white p-4 flex justify-between items-center">
-                    <h3 className="text-xl font-bold">{selectedRifa.nome_premio}</h3>
-                    <button onClick={() => setSelectedRifa(null)} className="hover:bg-pink-700 p-2 rounded-full"><X /></button>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-2 z-50 animate-fade-in backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+                <div className="bg-gradient-to-r from-pink-600 to-purple-700 text-white p-4 flex justify-between items-center shadow-md">
+                    <div>
+                        <h3 className="text-xl font-bold">{selectedRifa.nome_premio}</h3>
+                        <p className="text-xs opacity-90">Toque nos números para selecionar</p>
+                    </div>
+                    <button onClick={() => setSelectedRifa(null)} className="hover:bg-white/20 p-2 rounded-full transition"><X /></button>
                 </div>
 
-                <div className="flex-grow overflow-y-auto p-6 bg-gray-50 flex flex-col md:flex-row gap-8">
-                    <div className="flex-1">
-                        <p className="font-bold text-gray-700 mb-4 flex gap-4 text-sm">
-                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-white border border-gray-400"></div> Livre</span>
-                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-yellow-400 rounded"></div> Reservado (Aguardando)</span>
-                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded"></div> Pago (Confirmado)</span>
-                        </p>
-                        <div className="flex flex-wrap gap-2 justify-center content-start">
+                <div className="flex-grow overflow-hidden flex flex-col md:flex-row">
+                    <div className="flex-1 overflow-y-auto p-6 bg-gray-50 border-r border-gray-200">
+                        <div className="flex justify-center gap-4 mb-6 text-xs font-semibold text-gray-600 sticky top-0 bg-gray-50 py-2 z-20">
+                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-white border border-gray-400 rounded"></div> Livre</span>
+                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-green-600 rounded shadow"></div> Seu</span>
+                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded opacity-50"></div> Ocupado</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 justify-center content-start pb-10">
                             {renderGrid()}
                         </div>
                     </div>
 
-                    <div className="md:w-80 bg-white p-6 rounded-lg shadow-sm border border-gray-200 h-fit">
-                        <h4 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Checkout Seguro</h4>
-                        
-                        {numeroSelecionado ? (
-                            <form onSubmit={handlePagar} className="space-y-4">
-                                <div className="text-center bg-green-50 p-4 rounded-lg border border-green-200 mb-4">
-                                    <p className="text-sm text-gray-600">Número Escolhido</p>
-                                    <p className="text-4xl font-bold text-green-600">{numeroSelecionado}</p>
-                                    <p className="text-sm font-bold mt-1 text-gray-700">Valor: R$ {Number(selectedRifa.valor_numero).toFixed(2)}</p>
-                                </div>
+                    <div className="md:w-96 bg-white flex flex-col shadow-lg z-30">
+                        <div className="p-6 flex-grow flex flex-col">
+                            <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
+                                <ShoppingBag className="text-pink-600" size={20} /> Seu Carrinho
+                            </h4>
 
-                                <div>
-                                    <label className="text-sm font-bold text-gray-700 block mb-1">Seu Nome</label>
-                                    <input required type="text" className="w-full border rounded p-2 text-sm"
-                                        value={compradorInfo.nome}
-                                        onChange={e => setCompradorInfo({...compradorInfo, nome: e.target.value})}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-bold text-gray-700 block mb-1">Seu WhatsApp</label>
-                                    <input required type="tel" className="w-full border rounded p-2 text-sm"
-                                        placeholder="(61) 99999-9999"
-                                        value={compradorInfo.telefone}
-                                        onChange={handlePhoneChangeRifa}
-                                    />
-                                </div>
+                            {selectedNumbers.length > 0 ? (
+                                <>
+                                    <div className="flex-grow overflow-y-auto max-h-40 mb-4 p-2 bg-gray-50 rounded-lg border border-gray-100">
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedNumbers.sort((a,b)=>a-b).map(n => (
+                                                <span key={n} className="bg-white border border-green-200 text-green-700 px-2 py-1 rounded-md text-sm font-bold shadow-sm flex items-center gap-1">
+                                                    #{n} <button onClick={() => toggleNumber(n)} className="hover:text-red-500"><X size={12}/></button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                <Button type="submit" variant="primary" className="w-full bg-blue-600 hover:bg-blue-700" disabled={pagamentoStatus === 'loading'}>
-                                    {pagamentoStatus === 'loading' ? 'Gerando Link...' : 'Pagar com Pix/Cartão'}
-                                </Button>
-                                <p className="text-xs text-gray-400 text-center mt-2 flex items-center justify-center gap-1">
-                                    <Lock size={10} /> Pagamento processado via Mercado Pago
-                                </p>
+                                    <div className="flex justify-between items-end border-b pb-4 mb-4">
+                                        <div className="text-gray-500 text-sm">
+                                            {selectedNumbers.length} números x R$ {Number(selectedRifa.valor_numero).toFixed(2)}
+                                        </div>
+                                        <div className="text-2xl font-bold text-gray-800">
+                                            R$ {totalPagar.toFixed(2)}
+                                        </div>
+                                    </div>
 
-                                <div className="pt-4 border-t mt-4">
-                                    <button type="button" onClick={handleSimularPagamento} className="text-xs text-gray-400 hover:text-green-600 underline w-full text-center">
-                                        (Dev) Simular Pagamento Aprovado
-                                    </button>
+                                    <form onSubmit={handlePagar} className="space-y-3 mt-auto">
+                                        
+                                        {/* EXIBIÇÃO INTELIGENTE: Se Logado vs Não Logado */}
+                                        {clientUser ? (
+                                            <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800 mb-2">
+                                                <p className="font-bold flex items-center gap-1"><User size={14}/> Comprando como:</p>
+                                                <p>{clientUser.nome}</p>
+                                                <p>{clientUser.telefone}</p>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800 mb-2 flex items-center gap-2">
+                                                <AlertCircle size={20} />
+                                                <p>Você precisa fazer login para finalizar a compra e garantir seus números.</p>
+                                            </div>
+                                        )}
+
+                                        <Button type="submit" variant="success" className="w-full py-3 text-lg shadow-green-200" disabled={pagamentoStatus === 'loading'}>
+                                            {pagamentoStatus === 'loading' ? 'Processando...' : (clientUser ? 'Pagar com Pix/Cartão' : 'Fazer Login e Pagar')}
+                                        </Button>
+                                    </form>
+                                    
+                                    {/* Botão de Teste */}
+                                    <div className="pt-4 border-t mt-4">
+                                        <button type="button" onClick={handleSimularPagamento} className="text-xs text-gray-400 hover:text-green-600 underline w-full text-center">
+                                            (Dev) Simular Pagamento Aprovado
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                    <Ticket className="w-16 h-16 mb-4 opacity-20" />
+                                    <p className="text-center">Selecione números na grade para continuar.</p>
                                 </div>
-                            </form>
-                        ) : (
-                            <div className="text-center py-10 text-gray-400">
-                                <Ticket className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                                <p>Selecione um número.</p>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -485,7 +695,7 @@ const Rifas = () => {
   );
 };
 
-// 4. Página de Mentoria
+// 5. Página de Mentoria
 const Mentoria = () => {
   const [formData, setFormData] = useState({ nome: '', telefone: '', nivel: '', dificuldade: '' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -608,7 +818,7 @@ const Mentoria = () => {
   );
 };
 
-// 5. Painel de Administração
+// 6. Painel de Administração
 const Admin = ({ logout }: { logout: () => void }) => {
   const [activeTab, setActiveTab] = useState<'consultoras' | 'rifas' | 'mentoria'>('consultoras');
   const [consultoras, setConsultoras] = useState<Consultora[]>([]);
@@ -775,7 +985,7 @@ const Admin = ({ logout }: { logout: () => void }) => {
   );
 };
 
-// 6. Login do Admin
+// 7. Login do Admin
 const AdminLogin = ({ onLogin }: { onLogin: () => void }) => {
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
@@ -837,19 +1047,29 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
+  // Estado do Usuário Cliente Logado
+  const [clientUser, setClientUser] = useState<ClienteUser | null>(null);
 
   const renderPage = () => {
     switch(currentPage) {
       case 'home': return <Home changePage={setCurrentPage} />;
       case 'cadastro': return <Cadastro />;
-      case 'rifas': return <Rifas />;
+      // Rifa agora recebe a função para redirecionar
+      case 'rifas': 
+        return <Rifas 
+                  clientUser={clientUser} 
+                  onRedirectLogin={() => setCurrentPage('minha-conta')} 
+                />;
       case 'mentoria': return <Mentoria />;
-      case 'admin': 
-        return isAdminLogged ? (
-          <Admin logout={() => setIsAdminLogged(false)} />
-        ) : (
-          <AdminLogin onLogin={() => setIsAdminLogged(true)} />
-        );
+      case 'minha-conta': 
+        return <MinhaConta 
+                  user={clientUser} 
+                  onLogin={setClientUser} 
+                  onLogout={() => setClientUser(null)} 
+                  // Se vier da rifa, volta pra rifa após login
+                  redirectAfterLogin={() => setCurrentPage('rifas')}
+                />;
+      case 'admin': return isAdminLogged ? <Admin logout={() => setIsAdminLogged(false)} /> : <AdminLogin onLogin={() => setIsAdminLogged(true)} />;
       default: return <Home changePage={setCurrentPage} />;
     }
   };
@@ -857,7 +1077,7 @@ export default function App() {
   const NavLink = ({ page, label }: NavLinkProps) => (
     <button 
       onClick={() => { setCurrentPage(page); setMobileMenuOpen(false); }}
-      className={`text-sm md:text-base font-medium px-3 py-2 rounded-md transition duration-200 ${currentPage === page ? 'bg-pink-700 text-white shadow-inner' : 'text-pink-100 hover:bg-pink-500 hover:text-white'}`}
+      className={`text-sm font-medium px-3 py-2 rounded transition ${currentPage === page ? 'text-white underline' : 'text-pink-100 hover:text-white'}`}
     >
       {label}
     </button>
@@ -871,18 +1091,21 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col text-gray-800">
       <nav className="bg-pink-600 shadow-lg sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setCurrentPage('home')}>
-            <div className="bg-white text-pink-600 p-2 rounded-full shadow-md group-hover:rotate-12 transition duration-300">
-              <ShoppingBag size={20} />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-white">Mentora Tupperware</span>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
+            <div className="bg-white text-pink-600 p-2 rounded-full shadow-md"><ShoppingBag size={20} /></div>
+            <span className="text-xl font-bold tracking-tight text-white ml-2">Mentora Tupperware</span>
           </div>
 
-          <div className="hidden md:flex gap-2">
+          <div className="hidden md:flex gap-4 items-center">
             <NavLink page="home" label="Início" />
             <NavLink page="cadastro" label="Seja Consultora" />
-            <NavLink page="rifas" label="Rifas & Prêmios" />
+            <NavLink page="rifas" label="Rifas" />
             <NavLink page="mentoria" label="Mentoria VIP" />
+            
+            {/* Botão de Minha Conta Destacado */}
+            <button onClick={() => setCurrentPage('minha-conta')} className="bg-white text-pink-600 px-4 py-2 rounded-full font-bold text-sm hover:bg-gray-100 flex items-center gap-2">
+                <User size={16}/> {clientUser ? clientUser.nome.split(' ')[0] : 'Minha Conta'}
+            </button>
           </div>
 
           <div className="md:hidden text-white">
@@ -897,8 +1120,9 @@ export default function App() {
             <div className="flex flex-col p-4 gap-2">
               <NavLink page="home" label="Início" />
               <NavLink page="cadastro" label="Seja Consultora" />
-              <NavLink page="rifas" label="Rifas & Prêmios" />
+              <NavLink page="rifas" label="Rifas" />
               <NavLink page="mentoria" label="Mentoria VIP" />
+              <NavLink page="minha-conta" label="Minha Conta" />
             </div>
           </div>
         )}
@@ -908,36 +1132,10 @@ export default function App() {
         {renderPage()}
       </main>
 
-      <footer className="bg-gray-900 text-gray-300 py-12 border-t-4 border-pink-600">
-        <div className="container mx-auto px-4 grid md:grid-cols-4 gap-8">
-          <div className="col-span-1 md:col-span-2">
-            <h4 className="font-bold text-xl text-white mb-4 flex items-center gap-2">
-              <ShoppingBag className="text-pink-500" /> Mentora Tupperware
-            </h4>
-            <p className="mb-4 max-w-sm">Levando oportunidade e desenvolvimento profissional para mulheres em todo o Brasil. Junte-se à nossa força de vendas.</p>
-          </div>
-          
-          <div>
-            <h4 className="font-bold text-white mb-4">Acesso Rápido</h4>
-            <ul className="space-y-2">
-              <li><button onClick={() => setCurrentPage('cadastro')} className="hover:text-pink-400 transition">Cadastro</button></li>
-              <li><button onClick={() => setCurrentPage('rifas')} className="hover:text-pink-400 transition">Rifas</button></li>
-              <li><button onClick={() => setCurrentPage('mentoria')} className="hover:text-pink-400 transition">Mentoria</button></li>
-            </ul>
-          </div>
-          
-          <div>
-            <h4 className="font-bold text-white mb-4">Contato</h4>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2"><MessageCircle size={16} /> (11) 99999-9999</li>
-              <li className="flex items-center gap-2"><Instagram size={16} /> @suamentora</li>
-              <li className="flex items-center gap-2"><Facebook size={16} /> /suamentoratupperware</li>
-            </ul>
-          </div>
-        </div>
-        <div className="text-center mt-12 pt-8 border-t border-gray-800 text-sm flex justify-between items-center px-4">
-          <span>&copy; {new Date().getFullYear()} Mentora Tupperware. Todos os direitos reservados.</span>
-          <button onClick={() => setCurrentPage('admin')} className="text-gray-700 hover:text-white text-xs flex items-center gap-1 transition">
+      <footer className="bg-gray-900 text-gray-300 py-8 border-t-4 border-pink-600">
+        <div className="container mx-auto px-4 text-center text-sm">
+          <p>&copy; {new Date().getFullYear()} Mentora Tupperware. Todos os direitos reservados.</p>
+          <button onClick={() => setCurrentPage('admin')} className="text-gray-600 hover:text-white mt-2 flex items-center gap-1 mx-auto transition">
              <Lock size={12} /> Área Restrita
           </button>
         </div>
