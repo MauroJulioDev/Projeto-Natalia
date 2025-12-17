@@ -1,7 +1,7 @@
 // Arquivo: App.tsx
-// Versão Final: Sistema Completo (Rifa, Login, Admin, Pagamento)
+// Versão Final: Com Persistência de Sessão (LocalStorage) e Timeout de 2 Horas
 import React, { useState, FormEvent, useEffect } from 'react';
-import { UserPlus, ShoppingBag, GraduationCap, Menu, X, Instagram, Facebook, MessageCircle, CheckCircle, AlertCircle, Lock, LogOut, Database, Ticket, User, History, ArrowRight, LogIn } from 'lucide-react';
+import { UserPlus, ShoppingBag, GraduationCap, Menu, X, Instagram, Facebook, MessageCircle, CheckCircle, AlertCircle, Lock, LogOut, Database, Ticket, User, History, ArrowRight } from 'lucide-react';
 
 // --- DEFINIÇÃO DE TIPOS ---
 
@@ -204,8 +204,7 @@ const MinhaConta = ({ user, onLogin, onLogout, redirectAfterLogin }: { user: Cli
                 alert("Cadastro realizado! Faça login.");
                 setView('login');
             } else {
-                onLogin(data); // Salva usuário no estado global
-                // Redireciona de volta para a rifa se necessário
+                onLogin(data); // Chama o handler de login do App
                 if (redirectAfterLogin) redirectAfterLogin();
             }
         } catch (err: any) { setError(err.message); }
@@ -530,17 +529,6 @@ const Rifas = ({ clientUser, onRedirectLogin }: { clientUser: ClienteUser | null
     }
   };
 
-  const handleSimularPagamento = async () => {
-      if(!selectedRifa || selectedNumbers.length === 0) return;
-      await fetch('http://localhost:3001/api/simular-pagamento', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ rifaId: selectedRifa.id, numeros: selectedNumbers })
-      });
-      alert("Simulação: Pagamento Aprovado para todos os números!");
-      window.location.reload();
-  };
-
   const renderGrid = () => {
     if (!selectedRifa) return null;
     const grid: JSX.Element[] = [];
@@ -671,13 +659,6 @@ const Rifas = ({ clientUser, onRedirectLogin }: { clientUser: ClienteUser | null
                                             {pagamentoStatus === 'loading' ? 'Processando...' : (clientUser ? 'Pagar com Pix/Cartão' : 'Fazer Login e Pagar')}
                                         </Button>
                                     </form>
-                                    
-                                    {/* Botão de Teste */}
-                                    <div className="pt-4 border-t mt-4">
-                                        <button type="button" onClick={handleSimularPagamento} className="text-xs text-gray-400 hover:text-green-600 underline w-full text-center">
-                                            (Dev) Simular Pagamento Aprovado
-                                        </button>
-                                    </div>
                                 </>
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -1047,14 +1028,48 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
-  // Estado do Usuário Cliente Logado
   const [clientUser, setClientUser] = useState<ClienteUser | null>(null);
+
+  // --- PERSISTÊNCIA DE SESSÃO ---
+  useEffect(() => {
+    // Tenta recuperar o usuário do LocalStorage ao carregar
+    const storedUser = localStorage.getItem('tupperware_client_user');
+    const storedTime = localStorage.getItem('tupperware_login_time');
+    
+    if (storedUser && storedTime) {
+      const now = new Date().getTime();
+      const loginTime = parseInt(storedTime);
+      const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 2 horas (em milissegundos)
+
+      if (now - loginTime < SESSION_TIMEOUT) {
+        setClientUser(JSON.parse(storedUser));
+      } else {
+        // Sessão expirada
+        localStorage.removeItem('tupperware_client_user');
+        localStorage.removeItem('tupperware_login_time');
+      }
+    }
+  }, []);
+
+  const handleClientLogin = (user: ClienteUser) => {
+    setClientUser(user);
+    // Salva no LocalStorage
+    localStorage.setItem('tupperware_client_user', JSON.stringify(user));
+    localStorage.setItem('tupperware_login_time', new Date().getTime().toString());
+  };
+
+  const handleClientLogout = () => {
+    setClientUser(null);
+    // Remove do LocalStorage
+    localStorage.removeItem('tupperware_client_user');
+    localStorage.removeItem('tupperware_login_time');
+  };
 
   const renderPage = () => {
     switch(currentPage) {
       case 'home': return <Home changePage={setCurrentPage} />;
       case 'cadastro': return <Cadastro />;
-      // Rifa agora recebe a função para redirecionar
+      // Passa o usuário logado para a Rifa
       case 'rifas': 
         return <Rifas 
                   clientUser={clientUser} 
@@ -1064,8 +1079,8 @@ export default function App() {
       case 'minha-conta': 
         return <MinhaConta 
                   user={clientUser} 
-                  onLogin={setClientUser} 
-                  onLogout={() => setClientUser(null)} 
+                  onLogin={handleClientLogin} // Usa o handler com persistência
+                  onLogout={handleClientLogout} // Usa o handler com persistência
                   // Se vier da rifa, volta pra rifa após login
                   redirectAfterLogin={() => setCurrentPage('rifas')}
                 />;
