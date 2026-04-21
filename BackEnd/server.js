@@ -1,5 +1,5 @@
 // Arquivo: server.js
-// Versão: Correção Final Mercado Pago (Bypass Localhost Restrictions)
+// Versão: Completa (Mercado Pago + Admin Dashboard + CRUD Rifas)
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
@@ -10,17 +10,18 @@ const app = express();
 const PORT = 3001;
 
 // --- CONFIGURAÇÃO MERCADO PAGO ---
-// 1. Cole sua Credencial de TESTE aqui (começa com TEST-...)
 const client = new MercadoPagoConfig({ accessToken: 'TEST-293404710508092-010509-23454016cc1cf244b865b0b20018c3d6-821679961' });
 
 app.use(cors()); 
-app.use(bodyParser.json());
+// Aumentando o limite para 50 megabytes para aceitar imagens em Base64
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // --- CONEXÃO COM BANCO DE DADOS ---
 const db = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'admin10140131', // <--- Verifique sua senha
+  password: process.env.DB_PASSWORD || '10140131', 
   database: process.env.DB_NAME || 'tupperware_db',
   waitForConnections: true,
   connectionLimit: 10,
@@ -34,7 +35,9 @@ db.getConnection((err) => {
 
 app.get('/', (req, res) => res.send('API Online'));
 
-// --- ROTAS DE AUTENTICAÇÃO ---
+// ==========================================
+// ROTAS DE AUTENTICAÇÃO E CLIENTES
+// ==========================================
 app.post('/api/auth/register', (req, res) => {
     const { nome, email, telefone, senha } = req.body;
     if (!nome || !email || !senha) return res.status(400).send({ message: "Preencha tudo." });
@@ -65,7 +68,9 @@ app.get('/api/clientes/:id/historico', (req, res) => {
     });
 });
 
-// --- ROTAS CONSULTORA / MENTORIA ---
+// ==========================================
+// ROTAS DO PAINEL ADMIN (CONSULTORAS E MENTORIA)
+// ==========================================
 app.post('/api/consultoras', (req, res) => {
   let { nome, email, telefone, cidade } = req.body;
   const tel = telefone.replace(/\D/g, '');
@@ -79,7 +84,10 @@ app.post('/api/consultoras', (req, res) => {
     });
   });
 });
-app.get('/api/consultoras', (req, res) => { db.query("SELECT * FROM consultoras ORDER BY id DESC", (e,r)=>res.json(r||[])); });
+
+app.get('/api/consultoras', (req, res) => { 
+    db.query("SELECT * FROM consultoras ORDER BY id DESC", (e,r)=>res.json(r||[])); 
+});
 
 app.post('/api/mentoria', (req, res) => {
   const { nome, telefone, nivel, dificuldade } = req.body;
@@ -87,18 +95,86 @@ app.post('/api/mentoria', (req, res) => {
       if(e) return res.status(500).send({message: "Erro"}); res.status(201).send({ message: "Sucesso!" });
   });
 });
-app.get('/api/mentoria', (req, res) => { db.query("SELECT * FROM mentoria_leads ORDER BY id DESC", (e,r)=>res.json(r||[])); });
 
-// --- RIFAS & PAGAMENTO (CORREÇÃO DE AUTO_RETURN) ---
-app.get('/api/rifas', (req, res) => {
-  const sql = `SELECT r.*, (SELECT COUNT(*) FROM rifa_numeros rn WHERE rn.rifa_id = r.id AND rn.status = 'Pago') as numeros_vendidos FROM rifas r ORDER BY r.id DESC`;
-  db.query(sql, (err, result) => res.json(result || []));
+app.get('/api/mentoria', (req, res) => { 
+    db.query("SELECT * FROM mentoria_leads ORDER BY id DESC", (e,r)=>res.json(r||[])); 
 });
 
+// ==========================================
+// ROTAS DE GERENCIAMENTO DE RIFAS (CRUD)
+// ==========================================
+
+// LER todas as Rifas (Vitrine e Painel)
+ app.get('/api/rifas', (req, res) => {
+    // Usamos o * para garantir que numeros_vendidos e vencedor_numero sejam enviados
+    const sql = "SELECT * FROM rifas"; 
+    db.query(sql, (err, result) => {
+        if (err) return res.status(500).json(err);
+        res.json(result);
+    });
+});
+
+// LER os números ocupados de uma Rifa
 app.get('/api/rifas/:id/numeros', (req, res) => {
     db.query("SELECT numero, status, comprador_nome FROM rifa_numeros WHERE rifa_id = ?", [req.params.id], (err, result) => res.json(result || []));
 });
 
+// CRIAR uma nova Rifa
+app.post('/api/rifas', (req, res) => {
+    const { nome_premio, valor_numero, total_numeros, imagem_url } = req.body;
+    
+    // Removido o "numeros_vendidos" do SQL
+    const query = 'INSERT INTO rifas (nome_premio, total_numeros, valor_numero, imagem_url) VALUES (?, ?, ?, ?)';
+    
+    db.query(query, [nome_premio, total_numeros, valor_numero, imagem_url], (err, result) => {
+        if (err) {
+            console.error("Erro ao criar rifa:", err);
+            return res.status(500).json({ error: 'Erro no banco de dados' });
+        }
+        res.status(201).json({ message: 'Rifa cadastrada!', id: result.insertId });
+    });
+});
+
+// ATUALIZAR uma Rifa (NOVO)
+app.put('/api/rifas/:id', (req, res) => {
+    const { id } = req.params;
+    const { nome_premio, valor_numero, total_numeros, imagem_url } = req.body;
+
+    const query = 'UPDATE rifas SET nome_premio = ?, total_numeros = ?, valor_numero = ?, imagem_url = ? WHERE id = ?';
+    
+    db.query(query, [nome_premio, total_numeros, valor_numero, imagem_url, id], (err, result) => {
+        if (err) {
+            console.error("Erro ao atualizar rifa:", err);
+            return res.status(500).json({ error: 'Erro ao atualizar no banco.' });
+        }
+        res.status(200).json({ message: 'Rifa atualizada com sucesso!' });
+    });
+});
+
+// DELETAR uma Rifa (NOVO)
+app.delete('/api/rifas/:id', (req, res) => {
+    const { id } = req.params;
+
+    // Primeiro, deleta os números reservados dessa rifa
+    db.query('DELETE FROM rifa_numeros WHERE rifa_id = ?', [id], (err1) => {
+        if (err1) {
+            console.error("Erro ao limpar números da rifa:", err1);
+            return res.status(500).json({ error: 'Erro ao limpar dados relacionados.' });
+        }
+        // Depois, deleta a rifa em si
+        db.query('DELETE FROM rifas WHERE id = ?', [id], (err2) => {
+            if (err2) {
+                console.error("Erro ao deletar rifa:", err2);
+                return res.status(500).json({ error: 'Erro ao deletar a rifa.' });
+            }
+            res.status(200).json({ message: 'Rifa deletada com sucesso!' });
+        });
+    });
+});
+
+// ==========================================
+// ROTAS DE PAGAMENTO E CHECKOUT
+// ==========================================
 app.post('/api/rifas/:id/pagar', async (req, res) => {
     const rifaId = req.params.id;
     const { numeros, nome, telefone, valorUnitario, tituloRifa, clienteId } = req.body;
@@ -115,8 +191,6 @@ app.post('/api/rifas/:id/pagar', async (req, res) => {
 
             const preference = new Preference(client);
             
-            // CORREÇÃO: Removido 'auto_return' para evitar erro com localhost
-            // Adicionado email fictício ao payer para passar na validação
             const preferenceData = {
                 body: {
                     items: [{ 
@@ -127,14 +201,13 @@ app.post('/api/rifas/:id/pagar', async (req, res) => {
                     }],
                     payer: { 
                         name: nome || 'Cliente',
-                        email: 'cliente_teste@user.com' // Obrigatório em Sandbox
+                        email: 'cliente_teste@user.com' 
                     },
                     back_urls: { 
                         success: 'http://localhost:5173', 
                         failure: 'http://localhost:5173', 
                         pending: 'http://localhost:5173' 
                     },
-                    // auto_return: 'approved', // <--- COMENTADO PARA FUNCIONAR EM LOCALHOST
                     external_reference: JSON.stringify({ rifaId, numeros, clienteId }),
                 }
             };
@@ -162,6 +235,126 @@ app.post('/api/simular-pagamento', (req, res) => {
     const placeholders = numeros.map(() => '?').join(',');
     db.query(`UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`, [rifaId, ...numeros], (err) => {
         if(err) return res.status(500).send(err); res.send({message:"Ok"});
+    });
+});
+
+app.post('/api/auth/login', (req, res) => {
+    const { email, senha } = req.body;
+    // Buscamos o usuário no banco
+    db.query("SELECT id, nome, email, telefone FROM clientes WHERE email = ? AND senha = ?", [email, senha], (err, results) => {
+        if (err) return res.status(500).send({ message: "Erro banco." });
+        if (results.length > 0) {
+            // Enviamos os dados REAIS do banco para o Frontend
+            res.json(results[0]); 
+        } else {
+            res.status(401).send({ message: "Login inválido." });
+        }
+    });
+});
+
+// Função auxiliar para limpar reservas expiradas (Coloque no topo do arquivo)
+const limparReservasExpiradas = () => {
+    // Deleta reservas que não foram pagas e que foram criadas há mais de 5 minutos
+    const sql = `DELETE FROM rifa_numeros 
+                 WHERE status = 'Reservado' 
+                 AND data_reserva < NOW() - INTERVAL 5 MINUTE`;
+    db.query(sql, (err) => {
+        if (err) console.error("Erro ao limpar expirados:", err);
+    });
+};
+
+// 1. ATUALIZAR: Rota que busca os números ocupados
+app.get('/api/rifas/:id/numeros', (req, res) => {
+    // Antes de enviar os números para o site, limpamos o que já expirou
+    limparReservasExpiradas();
+
+    db.query(
+        "SELECT numero, status, comprador_nome FROM rifa_numeros WHERE rifa_id = ?", 
+        [req.params.id], 
+        (err, result) => res.json(result || [])
+    );
+});
+
+// 2. ATUALIZAR: Rota de Pagamento (Segurança contra duplicidade)
+app.post('/api/rifas/:id/pagar', async (req, res) => {
+    const rifaId = req.params.id;
+    const { numeros, nome, telefone, valorUnitario, tituloRifa, clienteId } = req.body;
+
+    // SEMPRE limpamos expirados antes de checar se um número está disponível
+    limparReservasExpiradas();
+
+    // Verificamos se algum dos números escolhidos já está ocupado (Pago ou Reservado ainda válido)
+    const placeholders = numeros.map(() => '?').join(',');
+    const checkSql = `SELECT numero FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders})`;
+    
+    db.query(checkSql, [rifaId, ...numeros], async (err, results) => {
+        if (results && results.length > 0) {
+            const ocupados = results.map(r => r.numero).join(', ');
+            return res.status(409).send({ message: `Os números [${ocupados}] acabaram de ser reservados por outra pessoa. Escolha outros!` });
+        }
+
+        // Se chegou aqui, os números estão livres. Prossegue com o Mercado Pago...
+        try {
+            // ... (restante do seu código do Mercado Pago igual ao anterior)
+            // ... ao final, o INSERT no rifa_numeros registrará a data_reserva (NOW())
+        } catch (error) { /* ... */ }
+    });
+});
+
+// ROTA PARA SORTEAR UM VENCEDOR
+app.post('/api/rifas/:id/sortear', (req, res) => {
+    const rifaId = req.params.id;
+
+    // 1. Buscamos todos os números PAGOS desta rifa
+    const sqlNumeros = "SELECT numero, comprador_nome FROM rifa_numeros WHERE rifa_id = ? AND status = 'Pago'";
+    
+    db.query(sqlNumeros, [rifaId], (err, results) => {
+        if (err) return res.status(500).json({ error: "Erro ao buscar números pagos." });
+        if (results.length === 0) return res.status(400).json({ message: "Não há números pagos para sortear." });
+
+        // 2. Sorteio aleatório no servidor (Segurança máxima)
+        const indiceSorteado = Math.floor(Math.random() * results.length);
+        const vencedor = results[indiceSorteado];
+
+        // 3. Salva o resultado na tabela de rifas
+        const sqlUpdate = "UPDATE rifas SET vencedor_numero = ?, data_sorteio = NOW() WHERE id = ?";
+        db.query(sqlUpdate, [vencedor.numero, rifaId], (updateErr) => {
+            if (updateErr) return res.status(500).json({ error: "Erro ao salvar vencedor." });
+            
+            res.json({
+                message: "Sorteio realizado com sucesso!",
+                numero: vencedor.numero,
+                ganhador: vencedor.comprador_nome
+            });
+        });
+    });
+});
+
+// server.js
+app.post('/api/rifas/:id/sortear', (req, res) => {
+    const rifaId = req.params.id;
+
+    // 1. Busca os números PAGOS
+    const sql = "SELECT numero, comprador_nome FROM rifa_numeros WHERE rifa_id = ? AND status = 'Pago'";
+    
+    db.query(sql, [rifaId], (err, results) => {
+        if (err) return res.status(500).json({ message: "Erro ao buscar números." });
+        if (results.length === 0) return res.status(400).json({ message: "Nenhum número pago encontrado." });
+
+        // 2. Sorteia um índice aleatório
+        const vencedor = results[Math.floor(Math.random() * results.length)];
+
+        // 3. Salva no banco de dados
+        const updateSql = "UPDATE rifas SET vencedor_numero = ?, data_sorteio = NOW() WHERE id = ?";
+        db.query(updateSql, [vencedor.numero, rifaId], (upErr) => {
+            if (upErr) return res.status(500).json({ message: "Erro ao salvar vencedor." });
+            
+            // 4. Retorna para o Frontend
+            res.json({
+                numero: vencedor.numero,
+                ganhador: vencedor.comprador_nome
+            });
+        });
     });
 });
 

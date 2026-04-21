@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent } from 'react';
-import { Ticket, X, ShoppingBag, AlertCircle, Check, DollarSign, Calendar, Gift } from 'lucide-react';
+import { Ticket, X, ShoppingBag, AlertCircle, Check, DollarSign, Gift, Calendar, Trophy, Medal } from 'lucide-react';
 import { Card, Button } from '../components/UI';
 import { Rifa, NumeroRifa, ClienteUser } from '../types';
 import { formatPhoneNumber } from '../utils/format';
@@ -18,22 +18,25 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   const [pagamentoStatus, setPagamentoStatus] = useState<'idle' | 'loading'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Sincroniza dados do usuário logado
   useEffect(() => { 
     if (clientUser) {
-      setCompradorInfo({ nome: clientUser.nome, telefone: clientUser.telefone || '' }); 
+      setCompradorInfo({ 
+        nome: clientUser.nome, 
+        telefone: clientUser.telefone || '' 
+      }); 
     }
   }, [clientUser]);
   
-  // Carrega as rifas
   useEffect(() => { 
     fetch('http://localhost:3001/api/rifas')
       .then(r => r.json())
       .then(setRifas)
-      .catch(err => { console.error(err); setErrorMsg("Não foi possível carregar as rifas no momento."); }); 
+      .catch(err => { 
+        console.error(err); 
+        setErrorMsg("Não foi possível carregar as rifas no momento."); 
+      }); 
   }, []);
 
-  // Carrega números quando uma rifa é selecionada
   useEffect(() => { 
     if (selectedRifa) {
       fetch(`http://localhost:3001/api/rifas/${selectedRifa.id}/numeros`)
@@ -47,16 +50,18 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     else setSelectedNumbers([...selectedNumbers, num]);
   };
 
-  const handlePhoneChangeRifa = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCompradorInfo({ ...compradorInfo, telefone: formatPhoneNumber(e.target.value) });
-  };
-
   const handlePagar = async (e: FormEvent) => {
     e.preventDefault();
-    if (!clientUser) { onRedirectLogin(); return; }
+    
+    if (!clientUser) { 
+      onRedirectLogin(); 
+      return; 
+    }
+    
     if (!selectedRifa || selectedNumbers.length === 0) return;
     
     setPagamentoStatus('loading');
+    
     try {
         const body = { 
           numeros: selectedNumbers, 
@@ -75,30 +80,46 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         
         const data = await res.json();
         
-        if (data.link_pagamento) window.location.href = data.link_pagamento;
-        else throw new Error(data.message || "Erro ao gerar pagamento");
+        if (res.status === 409) {
+           throw new Error(data.message); 
+        }
+
+        if (data.link_pagamento) {
+          window.location.href = data.link_pagamento;
+        } else {
+          throw new Error(data.message || "Erro ao gerar link de pagamento");
+        }
         
     } catch (err: any) { 
       alert(err.message); 
-      setPagamentoStatus('idle'); 
+      setPagamentoStatus('idle');
+      if (selectedRifa) {
+        fetch(`http://localhost:3001/api/rifas/${selectedRifa.id}/numeros`)
+          .then(r => r.json())
+          .then(setNumerosOcupados);
+      }
     }
   };
 
-  // Função para dev/teste
   const handleSimular = async () => {
-      if(!selectedRifa || !selectedNumbers.length) return;
+      if(!selectedRifa || !selectedNumbers.length || !clientUser) return;
       try {
         await fetch('http://localhost:3001/api/simular-pagamento', { 
           method: 'POST', 
           headers: {'Content-Type': 'application/json'}, 
-          body: JSON.stringify({ rifaId: selectedRifa.id, numeros: selectedNumbers }) 
+          body: JSON.stringify({ 
+            rifaId: selectedRifa.id, 
+            numeros: selectedNumbers,
+            clienteId: clientUser.id 
+          }) 
         });
-        alert("Simulação de Pagamento Aprovada! A página será recarregada."); 
+        alert("Pagamento Simulado com Sucesso!"); 
         window.location.reload();
-      } catch(e) { alert("Erro na simulação."); }
+      } catch(e) { 
+        alert("Erro na simulação."); 
+      }
   };
 
-  // Renderiza a grade de números
   const renderGrid = () => {
     if (!selectedRifa) return null;
     const grid: JSX.Element[] = [];
@@ -107,16 +128,15 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         const ocupado = numerosOcupados.find(n => n.numero === i);
         const isSelected = selectedNumbers.includes(i);
         
-        // Lógica de Estilo dos Números
         let baseClass = "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-200 border shadow-sm";
-        let statusClass = "bg-white hover:bg-pink-50 hover:border-pink-300 cursor-pointer border-gray-200 text-gray-600"; // Disponível
+        let statusClass = "bg-white hover:bg-pink-50 hover:border-pink-300 cursor-pointer border-gray-200 text-gray-600";
         
         if (ocupado) {
           statusClass = ocupado.status === 'Pago' 
-            ? "bg-gray-100 text-gray-300 cursor-not-allowed border-transparent shadow-none" // Pago (invisível/desabilitado visualmente)
-            : "bg-yellow-100 text-yellow-600 border-yellow-200 cursor-not-allowed"; // Reservado
+            ? "bg-gray-100 text-gray-300 cursor-not-allowed border-transparent" 
+            : "bg-yellow-100 text-yellow-600 border-yellow-200 cursor-not-allowed";
         } else if (isSelected) {
-          statusClass = "bg-pink-600 text-white border-pink-600 transform scale-110 shadow-md ring-2 ring-pink-200"; // Selecionado
+          statusClass = "bg-pink-600 text-white border-pink-600 transform scale-110 shadow-md ring-2 ring-pink-200";
         }
         
         grid.push(
@@ -136,7 +156,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-red-100 max-w-md">
         <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4"/>
-        <h3 className="text-xl font-bold text-gray-800 mb-2">Ops!</h3>
+        <h3 className="text-xl font-bold text-gray-800 mb-2">Erro de Conexão</h3>
         <p className="text-gray-600">{errorMsg}</p>
         <Button onClick={() => window.location.reload()} className="mt-6 w-full">Tentar Novamente</Button>
       </div>
@@ -146,7 +166,6 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col py-12 px-4 animate-fade-in">
       
-      {/* Cabeçalho da Página */}
       <div className="text-center mb-12">
         <div className="inline-block p-3 rounded-full bg-pink-100 mb-4">
           <Gift className="w-8 h-8 text-pink-600" />
@@ -155,24 +174,34 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
           Rifas & Prêmios
         </h2>
         <p className="text-gray-500 text-lg max-w-2xl mx-auto">
-          Escolha seus números da sorte e concorra a kits Tupperware exclusivos. Boa sorte!
+          Escolha seus números da sorte e concorra a kits Tupperware exclusivos.
         </p>
       </div>
 
-      {/* Grid de Rifas */}
       <div className="container mx-auto max-w-6xl">
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {rifas.map(rifa => {
             const porcentagem = Math.min((rifa.numeros_vendidos / rifa.total_numeros) * 100, 100);
-            
+            const isSorteada = rifa.vencedor_numero !== null;
+
             return (
-              <Card key={rifa.id} className="group hover:shadow-2xl transition-all duration-300 border-t-4 border-pink-500 overflow-hidden flex flex-col">
+              <Card key={rifa.id} className={`group hover:shadow-2xl transition-all duration-300 border-t-4 ${isSorteada ? 'border-green-500' : 'border-pink-500'} overflow-hidden flex flex-col`}>
                  <div className="relative h-56 overflow-hidden bg-gray-100">
                     <img 
                       src={rifa.imagem_url || "https://placehold.co/600x400/pink/white?text=Premio+Tupperware"} 
                       alt={rifa.nome_premio}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${isSorteada ? 'grayscale-[0.5]' : ''}`} 
                     />
+                    
+                    {/* Badge de Sorteada */}
+                    {isSorteada && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="bg-white text-green-600 px-4 py-2 rounded-lg font-black flex items-center gap-2 shadow-xl transform -rotate-3 border-2 border-green-600">
+                          <Trophy size={20} /> SORTEADA
+                        </div>
+                      </div>
+                    )}
+
                     <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-3 py-1.5 rounded-full text-sm font-bold shadow-lg text-pink-700 flex items-center gap-1">
                       <DollarSign size={14} className="stroke-[3]" />
                       {Number(rifa.valor_numero).toFixed(2)}
@@ -180,29 +209,33 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                  </div>
                  
                  <div className="p-6 flex flex-col flex-grow">
-                    <h3 className="font-bold text-xl text-gray-800 mb-2 line-clamp-1" title={rifa.nome_premio}>
-                      {rifa.nome_premio}
-                    </h3>
+                    <h3 className="font-bold text-xl text-gray-800 mb-2 line-clamp-1">{rifa.nome_premio}</h3>
                     
-                    <div className="mb-6">
-                      <div className="flex justify-between text-xs font-semibold text-gray-500 mb-1">
-                        <span>Progresso</span>
-                        <span>{Math.round(porcentagem)}% vendido</span>
+                    {isSorteada ? (
+                      <div className="mb-6 p-3 bg-green-50 rounded-xl border border-green-100">
+                        <div className="flex items-center gap-2 text-green-700 font-bold text-sm mb-1">
+                          <Medal size={16} /> Número Vencedor:
+                        </div>
+                        <span className="text-2xl font-black text-green-600">#{rifa.vencedor_numero}</span>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                        <div 
-                          className="bg-gradient-to-r from-pink-500 to-purple-600 h-full rounded-full transition-all duration-1000 ease-out" 
-                          style={{width: `${porcentagem}%`}}
-                        ></div>
+                    ) : (
+                      <div className="mb-6">
+                        <div className="flex justify-between text-xs font-semibold text-gray-500 mb-1">
+                          <span>{Math.round(porcentagem)}% vendido</span>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                          <div className="bg-gradient-to-r from-pink-500 to-purple-600 h-full rounded-full transition-all duration-1000" style={{width: `${porcentagem}%`}}></div>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="mt-auto">
                       <Button 
+                        disabled={isSorteada}
                         onClick={() => {setSelectedRifa(rifa); setSelectedNumbers([]);}} 
-                        className="w-full bg-gray-900 hover:bg-pink-600 text-white transition-colors duration-300 flex items-center justify-center gap-2 py-3 shadow-md"
+                        className={`w-full transition-colors duration-300 flex items-center justify-center gap-2 py-3 shadow-md ${isSorteada ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-pink-600 text-white'}`}
                       >
-                        <Ticket size={18}/> Escolher Números
+                        {isSorteada ? 'Rifa Encerrada' : <><Ticket size={18}/> Escolher Números</>}
                       </Button>
                     </div>
                  </div>
@@ -212,51 +245,29 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         </div>
       </div>
 
-      {/* MODAL DE SELEÇÃO DE NÚMEROS */}
       {selectedRifa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop com Blur */}
-            <div 
-              className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" 
-              onClick={() => setSelectedRifa(null)}
-            ></div>
+            <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setSelectedRifa(null)}></div>
 
-            {/* Conteúdo do Modal */}
             <div className="relative bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-in">
                 
-                {/* Header do Modal */}
-                <div className="bg-gradient-to-r from-pink-600 to-purple-700 text-white p-6 flex justify-between items-center shadow-md z-10">
+                <div className="bg-gradient-to-r from-pink-600 to-purple-700 text-white p-6 flex justify-between items-center z-10">
                     <div>
                       <h3 className="font-bold text-xl md:text-2xl">{selectedRifa.nome_premio}</h3>
-                      <p className="text-pink-100 text-sm opacity-90">Selecione seus números da sorte abaixo</p>
+                      <p className="text-pink-100 text-sm opacity-90">Escolha seus números abaixo</p>
                     </div>
-                    <button 
-                      onClick={() => setSelectedRifa(null)}
-                      className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"
-                    >
+                    <button onClick={() => setSelectedRifa(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
                       <X size={24}/>
                     </button>
                 </div>
 
                 <div className="flex flex-col md:flex-row h-full overflow-hidden">
-                    
-                    {/* Área Esquerda: Grid de Números */}
                     <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-gray-50">
-                      
-                      {/* Legenda */}
-                      <div className="flex flex-wrap gap-4 justify-center mb-8 text-sm text-gray-600">
-                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full border border-gray-300 bg-white"></div> Disponível</div>
-                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-pink-600"></div> Selecionado</div>
-                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-yellow-100 border border-yellow-200"></div> Reservado</div>
-                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-gray-200"></div> Vendido</div>
-                      </div>
-
                       <div className="flex flex-wrap gap-3 justify-center pb-20">
                         {renderGrid()}
                       </div>
                     </div>
 
-                    {/* Área Direita: Carrinho / Checkout */}
                     <div className="md:w-96 bg-white border-l border-gray-100 flex flex-col shadow-xl z-20">
                         <div className="p-6 border-b border-gray-100">
                            <h4 className="font-bold text-gray-800 flex items-center gap-2">
@@ -267,25 +278,27 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                         <div className="flex-1 p-6 overflow-y-auto">
                             {selectedNumbers.length > 0 ? (
                                 <div className="space-y-6">
+                                    {/* ALERTA DE RESERVA TEMPORÁRIA */}
+                                    <div className="bg-blue-50 p-3 rounded-lg flex items-start gap-2 border border-blue-100 animate-pulse">
+                                      <Calendar size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                                      <p className="text-[11px] text-blue-700 leading-tight">
+                                        <strong>Reserva Temporária:</strong> Seus números ficarão reservados por 15 minutos. Conclua o pagamento para garantir sua vaga!
+                                      </p>
+                                    </div>
+
                                     <div>
-                                      <p className="text-sm text-gray-500 mb-2">Números selecionados:</p>
+                                      <p className="text-sm text-gray-500 mb-2 font-medium">Números selecionados:</p>
                                       <div className="flex flex-wrap gap-2">
                                         {selectedNumbers.map(n => (
-                                          <span key={n} className="bg-pink-50 text-pink-700 px-2 py-1 rounded text-xs font-bold border border-pink-100">
-                                            #{n}
-                                          </span>
+                                          <span key={n} className="bg-pink-50 text-pink-700 px-2 py-1 rounded text-xs font-bold border border-pink-100">#{n}</span>
                                         ))}
                                       </div>
                                     </div>
                                     
                                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                                      <div className="flex justify-between items-center mb-1">
+                                      <div className="flex justify-between items-center mb-1 text-sm">
                                         <span className="text-gray-600">Quantidade</span>
                                         <span className="font-semibold">{selectedNumbers.length}</span>
-                                      </div>
-                                      <div className="flex justify-between items-center mb-1">
-                                        <span className="text-gray-600">Valor Unitário</span>
-                                        <span className="font-semibold">R$ {Number(selectedRifa.valor_numero).toFixed(2)}</span>
                                       </div>
                                       <div className="border-t border-gray-200 my-2 pt-2 flex justify-between items-center text-lg font-bold text-pink-600">
                                         <span>Total</span>
@@ -297,45 +310,30 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                                         {!clientUser && (
                                           <div className="bg-yellow-50 text-yellow-800 p-3 text-sm rounded-lg border border-yellow-200 flex items-start gap-2">
                                             <AlertCircle size={16} className="mt-0.5 flex-shrink-0"/>
-                                            <span>Faça login ou preencha seus dados para continuar.</span>
+                                            <span>Faça login para finalizar sua compra.</span>
                                           </div>
                                         )}
                                         
                                         <div className="space-y-3">
                                           <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase">Seu Nome</label>
-                                            <input 
-                                              required
-                                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-pink-500 outline-none transition disabled:bg-gray-100 disabled:text-gray-500" 
-                                              value={compradorInfo.nome} 
-                                              onChange={e=>setCompradorInfo({...compradorInfo, nome:e.target.value})} 
-                                              disabled={!!clientUser} 
-                                              placeholder="Digite seu nome completo" 
-                                            />
+                                            <label className="text-xs font-bold text-gray-400 uppercase">Nome Completo</label>
+                                            <input required readOnly className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed" value={compradorInfo.nome} />
                                           </div>
                                           <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase">Seu WhatsApp</label>
-                                            <input 
-                                              required
-                                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-pink-500 outline-none transition disabled:bg-gray-100 disabled:text-gray-500" 
-                                              value={compradorInfo.telefone} 
-                                              onChange={handlePhoneChangeRifa} 
-                                              disabled={!!clientUser} 
-                                              placeholder="(00) 00000-0000" 
-                                            />
+                                            <label className="text-xs font-bold text-gray-400 uppercase">WhatsApp</label>
+                                            <input required readOnly className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed" value={compradorInfo.telefone} />
                                           </div>
                                         </div>
 
                                         <Button 
                                           type="submit" 
-                                          className="w-full py-4 text-base font-bold bg-green-600 hover:bg-green-700 shadow-lg hover:shadow-xl transition-all" 
+                                          className="w-full py-4 text-base font-bold bg-green-600 hover:bg-green-700 shadow-lg transition-all" 
                                           disabled={pagamentoStatus === 'loading'}
                                         >
-                                          {pagamentoStatus === 'loading' ? 'Processando...' : (clientUser ? 'Finalizar Compra' : 'Pagar Agora')}
+                                          {pagamentoStatus === 'loading' ? 'Processando...' : (clientUser ? 'Finalizar Pagamento' : 'Fazer Login')}
                                         </Button>
                                     </form>
                                     
-                                    {/* Botão de Simulação (Apenas Dev) */}
                                     <button onClick={handleSimular} className="w-full text-xs text-gray-400 hover:text-gray-600 underline">
                                       (Modo Teste) Simular Pagamento Aprovado
                                     </button>
@@ -343,7 +341,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                             ) : (
                                 <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
                                   <Ticket size={48} className="mb-4 stroke-1"/>
-                                  <p>Selecione números na cartela para começar.</p>
+                                  <p>Escolha seus números na cartela.</p>
                                 </div>
                             )}
                         </div>

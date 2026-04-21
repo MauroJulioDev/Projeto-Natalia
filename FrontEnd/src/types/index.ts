@@ -1,11 +1,16 @@
+// No seu arquivo de types (Ex: src/types.ts)
+
 export interface Rifa {
   id: number;
   nome_premio: string;
   valor_numero: number;
-  imagem_url: string;
-  status: 'Aberta' | 'Encerrada';
-  numeros_vendidos: number;
   total_numeros: number;
+  numeros_vendidos: number;
+  imagem_url?: string;
+  descricao?: string;
+  // ADICIONE ESTAS DUAS LINHAS ABAIXO:
+  vencedor_numero?: number | null; 
+  data_sorteio?: string | null;
 }
 
 export interface NumeroRifa {
