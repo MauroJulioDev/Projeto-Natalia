@@ -2,11 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   Lock, LogOut, UserPlus, ShoppingBag, GraduationCap, MessageCircle, User, Key, 
   ChevronRight, LayoutDashboard, Search, AlertCircle, Download, Plus, Edit, Trash2, X, Save, Upload, Image as ImageIcon,
-  Trophy, Medal, Loader2, Sparkles, CheckCircle2
+  Trophy, Medal, Loader2, Sparkles
 } from 'lucide-react';
 import { Card, Button } from '../components/UI';
+import toast from 'react-hot-toast'; // Importação do Toast mantida!
 
 interface AdminProps { logout: () => void; }
+
+// Define a URL base da API puxando do .env (com fallback de segurança)
+const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
 
 // ============================================================================
 // COMPONENTE PRINCIPAL: ADMIN DASHBOARD
@@ -32,13 +36,30 @@ export default function Admin({ logout }: AdminProps) {
     imagem_url: '' 
   });
 
+  // Função auxiliar para pegar o token salvo e montar o cabeçalho seguro
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('admin_token');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
   // --- BUSCA DE DADOS ---
   const fetchData = () => {
     setLoading(true);
-    fetch(`http://localhost:3001/api/${activeTab}`)
-      .then(res => res.json())
+    fetch(`${API_URL}/api/${activeTab}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('admin_token')}` }
+    })
+      .then(res => {
+        if (res.status === 401 || res.status === 403) throw new Error("Sessão expirada");
+        return res.json();
+      })
       .then(setData)
-      .catch(err => console.error("Erro ao buscar dados:", err))
+      .catch(err => {
+        console.error("Erro ao buscar dados:", err);
+        if(err.message === "Sessão expirada") handleLogout(); 
+      })
       .finally(() => setLoading(false));
   };
 
@@ -46,36 +67,43 @@ export default function Admin({ logout }: AdminProps) {
     fetchData();
   }, [activeTab]);
 
-  // --- LÓGICA DE SORTEIO (OFFICIAL) ---
+  // Logout Seguro (Limpa o Token)
+  const handleLogout = () => {
+    localStorage.removeItem('admin_token');
+    logout();
+  };
+
+  // --- LÓGICA DE SORTEIO (OFFICIAL COM JWT) ---
   const handleSortear = async (rifa: any) => {
     if (!window.confirm(`ATENÇÃO: Deseja realizar o sorteio da rifa "${rifa.nome_premio}" agora?`)) return;
     
     setIsSorteando(true);
     try {
-      const res = await fetch(`http://localhost:3001/api/rifas/${rifa.id}/sortear`, { 
+      const res = await fetch(`${API_URL}/api/rifas/${rifa.id}/sortear`, { 
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: getAuthHeaders() 
       });
       const resData = await res.json();
       
       if (res.ok) {
+        toast.success("Sorteio realizado com sucesso!"); // Toast de Sucesso
         setResultadoSorteio({ 
           numero: resData.numero, 
           ganhador: resData.ganhador,
           premio: rifa.nome_premio 
         });
-        fetchData(); // Atualiza a lista para mostrar o vencedor na tabela
+        fetchData(); 
       } else {
-        alert(resData.message || "Erro ao realizar sorteio.");
+        toast.error(resData.message || "Erro ao realizar sorteio."); // Toast de Erro
       }
     } catch (error) {
-      alert("Erro de conexão com o servidor.");
+      toast.error("Erro de conexão com o servidor."); // Toast de Erro
     } finally {
       setIsSorteando(false);
     }
   };
 
-  // --- GERENCIAMENTO DE RIFAS (CRUD) ---
+  // --- GERENCIAMENTO DE RIFAS (CRUD COM JWT) ---
   const handleOpenRifaModal = (rifa?: any) => {
     if (rifa) {
       setEditingRifa(rifa);
@@ -95,12 +123,12 @@ export default function Admin({ logout }: AdminProps) {
   const handleSaveRifa = async (e: React.FormEvent) => {
     e.preventDefault();
     const method = editingRifa ? 'PUT' : 'POST';
-    const url = editingRifa ? `http://localhost:3001/api/rifas/${editingRifa.id}` : `http://localhost:3001/api/rifas`;
+    const url = editingRifa ? `${API_URL}/api/rifas/${editingRifa.id}` : `${API_URL}/api/rifas`;
 
     try {
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           ...rifaForm,
           total_numeros: Number(rifaForm.total_numeros),
@@ -108,21 +136,32 @@ export default function Admin({ logout }: AdminProps) {
         })
       });
       if (res.ok) {
+        toast.success(editingRifa ? "Rifa atualizada!" : "Rifa criada com sucesso!"); // Toast de Sucesso
         setIsRifaModalOpen(false);
         fetchData();
+      } else {
+        toast.error("Erro ao salvar rifa. Verifique sua permissão."); // Toast de Erro
       }
     } catch (error) {
-      alert("Erro ao salvar rifa.");
+      toast.error("Erro de conexão ao salvar rifa."); // Toast de Erro
     }
   };
 
   const handleDeleteRifa = async (id: number) => {
     if (!window.confirm("Excluir esta rifa permanentemente?")) return;
     try {
-      await fetch(`http://localhost:3001/api/rifas/${id}`, { method: 'DELETE' });
-      fetchData();
+      const res = await fetch(`${API_URL}/api/rifas/${id}`, { 
+        method: 'DELETE',
+        headers: getAuthHeaders() 
+      });
+      if(res.ok) {
+        toast.success("Rifa excluída do sistema."); // Toast de Sucesso
+        fetchData();
+      } else {
+        toast.error("Erro ao excluir. Verifique sua permissão."); // Toast de Erro
+      }
     } catch (error) {
-      alert("Erro ao excluir.");
+      toast.error("Erro de conexão."); // Toast de Erro
     }
   };
 
@@ -166,7 +205,7 @@ export default function Admin({ logout }: AdminProps) {
     );
 
     if (activeTab === 'rifas') {
-      const percent = item.total_numeros ? Math.round((item.numeros_vendidos / item.total_numeros) * 100) : 0;
+      const percent = item.total_numeros ? Math.min(Math.round((item.numeros_vendidos / item.total_numeros) * 100), 100) : 0;
       const isSorteada = item.vencedor_numero !== null;
 
       return (
@@ -226,20 +265,18 @@ export default function Admin({ logout }: AdminProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
-      {/* NAVBAR */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
         <div className="container mx-auto px-4 h-16 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="bg-pink-600 p-2 rounded-xl text-white"><LayoutDashboard size={20} /></div>
             <h1 className="font-bold text-gray-800 hidden sm:block">Painel Natália Tupperware</h1>
           </div>
-          <button onClick={logout} className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 font-medium transition-colors">
+          <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 font-medium transition-colors">
             <LogOut size={18} /> Sair
           </button>
         </div>
       </header>
 
-      {/* DASHBOARD CONTENT */}
       <main className="container mx-auto px-4 py-8 max-w-7xl">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div className="flex bg-white p-1 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto w-full md:w-auto">
@@ -283,13 +320,11 @@ export default function Admin({ logout }: AdminProps) {
         </Card>
       </main>
 
-      {/* MODAL: RESULTADO DO SORTEIO (VIP) */}
       {resultadoSorteio && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-pink-950/60 backdrop-blur-md animate-fade-in" onClick={() => setResultadoSorteio(null)}></div>
           <Card className="w-full max-w-sm bg-white relative z-10 animate-bounce-in rounded-[2rem] overflow-hidden shadow-[0_0_80px_rgba(219,39,119,0.4)] border-0">
             <div className="bg-gradient-to-br from-yellow-400 via-orange-500 to-yellow-600 p-10 text-center relative">
-               <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
                <Trophy size={90} className="text-white mx-auto mb-4 drop-shadow-[0_5px_15px_rgba(0,0,0,0.3)] animate-pulse" />
                <h3 className="text-4xl font-black text-white italic tracking-tighter drop-shadow-md">TEMOS UM VENCEDOR!</h3>
             </div>
@@ -308,7 +343,6 @@ export default function Admin({ logout }: AdminProps) {
         </div>
       )}
 
-      {/* MODAL: CADASTRO/EDIÇÃO DE RIFA */}
       {isRifaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setIsRifaModalOpen(false)}></div>
@@ -321,22 +355,22 @@ export default function Admin({ logout }: AdminProps) {
               <div className="space-y-4">
                 <div>
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block">Nome do Prêmio</label>
-                  <input required className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.nome_premio} onChange={e => setRifaForm({...rifaForm, nome_premio: e.target.value})} />
+                  <input required className="w-full p-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.nome_premio} onChange={e => setRifaForm({...rifaForm, nome_premio: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block">Qtd Números</label>
-                    <input type="number" required className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.total_numeros} onChange={e => setRifaForm({...rifaForm, total_numeros: e.target.value})} />
+                    <input type="number" required className="w-full p-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.total_numeros} onChange={e => setRifaForm({...rifaForm, total_numeros: e.target.value})} />
                   </div>
                   <div>
                     <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block">Valor (R$)</label>
-                    <input type="number" step="0.01" required className="w-full p-4 bg-gray-50 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.valor_numero} onChange={e => setRifaForm({...rifaForm, valor_numero: e.target.value})} />
+                    <input type="number" step="0.01" required className="w-full p-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold" value={rifaForm.valor_numero} onChange={e => setRifaForm({...rifaForm, valor_numero: e.target.value})} />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block">Foto do Prêmio</label>
                   <div className="flex gap-2">
-                    <input className="flex-1 p-4 bg-gray-50 border-0 rounded-2xl text-sm outline-none" placeholder="Link da imagem..." value={rifaForm.imagem_url.startsWith('data:') ? 'Imagem carregada' : rifaForm.imagem_url} onChange={e => setRifaForm({...rifaForm, imagem_url: e.target.value})} />
+                    <input className="flex-1 p-4 bg-gray-50 text-gray-900 border-0 rounded-2xl text-sm outline-none" placeholder="Link da imagem..." value={rifaForm.imagem_url.startsWith('data:') ? 'Imagem carregada' : rifaForm.imagem_url} onChange={e => setRifaForm({...rifaForm, imagem_url: e.target.value})} />
                     <label className="bg-pink-50 text-pink-600 p-4 rounded-2xl cursor-pointer hover:bg-pink-100 transition-colors"><Upload size={20}/><input type="file" className="hidden" onChange={handleImageUpload} /></label>
                   </div>
                 </div>
@@ -354,31 +388,65 @@ export default function Admin({ logout }: AdminProps) {
 }
 
 // ============================================================================
-// COMPONENTE: ADMIN LOGIN (SIMPLES)
+// COMPONENTE: ADMIN LOGIN (COM JWT REAL E CSS CORRIGIDO)
 // ============================================================================
 export function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
-  const submit = (e: any) => {
+  const submit = async (e: any) => {
     e.preventDefault();
-    if(user === 'admin' && pass === 'admin123') onLogin();
-    else alert("Credenciais incorretas.");
+    // LINHA DE TESTE: O Toast tem que aparecer imediatamente ao clicar!
+    toast("O botão foi clicado e o Toast está vivo!", { icon: '👀' }); 
+    
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/admin-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user, senha: pass })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        localStorage.setItem('admin_token', data.token);
+        toast.success("Login realizado com sucesso! Bem-vinda."); // Toast de Sucesso
+        onLogin();
+      } else {
+        toast.error(data.message || "Credenciais incorretas."); // Toast de Erro
+      }
+    } catch (error) {
+      if (user === 'admin' && pass === 'admin123') {
+        toast.success("Entrando em modo de teste."); // Toast de Sucesso para fallback
+        localStorage.setItem('admin_token', 'token_provisorio_de_desenvolvimento');
+        onLogin();
+      } else {
+        toast.error("Erro ao conectar com servidor."); // Toast de Erro
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
       <Card className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl relative z-10 border-0">
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-pink-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-pink-200 rotate-6"><Lock className="text-white" size={32}/></div>
+          <div className="w-20 h-20 bg-pink-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-pink-200 rotate-6">
+            <Lock className="text-white" size={32}/>
+          </div>
           <h2 className="text-3xl font-black text-gray-900 tracking-tighter">Área de Gestão</h2>
-          <p className="text-gray-400 font-medium">Mentora Tupperware</p>
+          <p className="text-gray-400 font-medium">Acesso Restrito</p>
         </div>
         <form onSubmit={submit} className="space-y-6">
-          <input required className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 font-bold" placeholder="Usuário" value={user} onChange={e => setUser(e.target.value)} />
-          <input required type="password" className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 font-bold" placeholder="Senha" value={pass} onChange={e => setPass(e.target.value)} />
-          <Button type="submit" className="w-full py-5 bg-pink-600 text-white rounded-2xl font-black text-xl shadow-xl hover:bg-pink-700 transition-all">ENTRAR NO SISTEMA</Button>
+          <input required className="w-full p-5 bg-gray-50 text-gray-900 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 font-bold" placeholder="E-mail Admin" value={user} onChange={e => setUser(e.target.value)} />
+          <input required type="password" className="w-full p-5 bg-gray-50 text-gray-900 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 font-bold" placeholder="Senha" value={pass} onChange={e => setPass(e.target.value)} />
+          <Button type="submit" disabled={isLoading} className="w-full py-5 bg-pink-600 text-white rounded-2xl font-black text-xl shadow-xl hover:bg-pink-700 transition-all">
+            {isLoading ? <Loader2 className="animate-spin mx-auto" size={24} /> : "ENTRAR NO SISTEMA"}
+          </Button>
         </form>
       </Card>
     </div>

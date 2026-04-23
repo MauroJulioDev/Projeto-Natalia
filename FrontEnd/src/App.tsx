@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { ShoppingBag, Menu, User, Lock, X } from 'lucide-react';
 import { ClienteUser } from './types';
+// Importação atualizada para trazer o disparador (toast) e o injetor (Toaster)
+import toast, { Toaster } from 'react-hot-toast';
 
 // --- IMPORTAÇÃO DAS PÁGINAS ---
 import Home from './pages/Home';
@@ -19,10 +21,59 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Recupera usuário salvo no navegador
+  // --- SISTEMA DE EXPIRAÇÃO POR INATIVIDADE (30 MINUTOS) ---
+  const TEMPO_LIMITE_INATIVIDADE = 30 * 60 * 1000; // 30 minutos em milissegundos
+
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const resetarTempo = () => {
+      clearTimeout(timeoutId);
+      
+      // Só inicia o contador de expulsão se tiver alguém logado (Cliente ou Admin)
+      if (clientUser || isAdminLogged) {
+        timeoutId = setTimeout(() => {
+          // Desloga Cliente
+          setClientUser(null);
+          localStorage.removeItem('tupperware_client_user');
+          
+          // Desloga Admin
+          setIsAdminLogged(false);
+          localStorage.removeItem('admin_token');
+
+          // ALERTA MODERNO ADICIONADO AQUI:
+          toast.error("Sua sessão expirou por inatividade. Faça login novamente para sua segurança.", { duration: 5000 });
+          navigate('/');
+        }, TEMPO_LIMITE_INATIVIDADE);
+      }
+    };
+
+    // Fica de olho se o usuário está mexendo no site
+    window.addEventListener('mousemove', resetarTempo);
+    window.addEventListener('keydown', resetarTempo);
+    window.addEventListener('click', resetarTempo);
+    window.addEventListener('scroll', resetarTempo);
+
+    resetarTempo(); // Dá o play no cronômetro
+
+    // Limpa os "olheiros" quando fechar a tela para não pesar a memória
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', resetarTempo);
+      window.removeEventListener('keydown', resetarTempo);
+      window.removeEventListener('click', resetarTempo);
+      window.removeEventListener('scroll', resetarTempo);
+    };
+  }, [clientUser, isAdminLogged, navigate]);
+  // ---------------------------------------------------------
+
+  // Recupera usuário cliente E o token de Admin salvos no navegador
   useEffect(() => {
     const storedUser = localStorage.getItem('tupperware_client_user');
     if (storedUser) setClientUser(JSON.parse(storedUser));
+
+    const adminToken = localStorage.getItem('admin_token');
+    if (adminToken) setIsAdminLogged(true);
   }, []);
 
   const handleLogin = (user: ClienteUser) => {
@@ -70,7 +121,11 @@ export default function App() {
   // --- ROTA DE ADMIN ---
   if (location.pathname === '/admin') {
     return isAdminLogged ? (
-      <Admin logout={() => { setIsAdminLogged(false); navigate('/'); }} />
+      <Admin logout={() => { 
+        setIsAdminLogged(false); 
+        localStorage.removeItem('admin_token'); 
+        navigate('/'); 
+      }} />
     ) : (
       <AdminLogin onLogin={() => setIsAdminLogged(true)} />
     );
@@ -157,6 +212,9 @@ export default function App() {
             </div>
           </div>
       </footer>
+      
+      {/* INJETOR DE NOTIFICAÇÕES (TOASTS) ADICIONADO AQUI! */}
+      <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
 }

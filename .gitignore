@@ -1,0 +1,11 @@
+# Pastas de dependências (NUNCA sobem pro GitHub)
+node_modules/
+
+# Arquivos de senhas e tokens de segurança
+.env
+
+# Sessão e Cache do WhatsApp Web
+.wwebjs_auth/
+
+# Pasta de build final do React
+dist/

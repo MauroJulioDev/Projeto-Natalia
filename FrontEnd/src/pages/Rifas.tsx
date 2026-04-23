@@ -1,13 +1,16 @@
 import React, { useState, useEffect, FormEvent } from 'react';
-import { Ticket, X, ShoppingBag, AlertCircle, Check, DollarSign, Gift, Calendar, Trophy, Medal } from 'lucide-react';
+import { Ticket, X, ShoppingBag, AlertCircle, Check, Gift, Calendar, Trophy, Medal } from 'lucide-react';
 import { Card, Button } from '../components/UI';
 import { Rifa, NumeroRifa, ClienteUser } from '../types';
-import { formatPhoneNumber } from '../utils/format';
+import toast from 'react-hot-toast'; // <-- Injetor de Notificações Importado!
 
 interface RifasProps {
   clientUser: ClienteUser | null;
   onRedirectLogin: () => void;
 }
+
+// Configuração do .env para a URL da API
+const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
 
 export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   const [rifas, setRifas] = useState<Rifa[]>([]);
@@ -17,6 +20,13 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   const [compradorInfo, setCompradorInfo] = useState({ nome: '', telefone: '' });
   const [pagamentoStatus, setPagamentoStatus] = useState<'idle' | 'loading'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const formatarReal = (valor: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(valor);
+  };
 
   useEffect(() => { 
     if (clientUser) {
@@ -28,7 +38,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   }, [clientUser]);
   
   useEffect(() => { 
-    fetch('http://localhost:3001/api/rifas')
+    fetch(`${API_URL}/api/rifas`)
       .then(r => r.json())
       .then(setRifas)
       .catch(err => { 
@@ -39,7 +49,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
 
   useEffect(() => { 
     if (selectedRifa) {
-      fetch(`http://localhost:3001/api/rifas/${selectedRifa.id}/numeros`)
+      fetch(`${API_URL}/api/rifas/${selectedRifa.id}/numeros`)
         .then(r => r.json())
         .then(setNumerosOcupados);
     }
@@ -61,6 +71,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     if (!selectedRifa || selectedNumbers.length === 0) return;
     
     setPagamentoStatus('loading');
+    toast.loading("Processando reserva...", { id: 'pagamento' }); // Toast de carregamento
     
     try {
         const body = { 
@@ -72,7 +83,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
           clienteId: clientUser.id 
         };
         
-        const res = await fetch(`http://localhost:3001/api/rifas/${selectedRifa.id}/pagar`, { 
+        const res = await fetch(`${API_URL}/api/rifas/${selectedRifa.id}/pagar`, { 
           method: 'POST', 
           headers: {'Content-Type': 'application/json'}, 
           body: JSON.stringify(body) 
@@ -85,16 +96,17 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         }
 
         if (data.link_pagamento) {
+          toast.success("Redirecionando para o Mercado Pago...", { id: 'pagamento' });
           window.location.href = data.link_pagamento;
         } else {
           throw new Error(data.message || "Erro ao gerar link de pagamento");
         }
         
     } catch (err: any) { 
-      alert(err.message); 
+      toast.error(err.message || "Ocorreu um erro ao processar o pagamento.", { id: 'pagamento' });
       setPagamentoStatus('idle');
       if (selectedRifa) {
-        fetch(`http://localhost:3001/api/rifas/${selectedRifa.id}/numeros`)
+        fetch(`${API_URL}/api/rifas/${selectedRifa.id}/numeros`)
           .then(r => r.json())
           .then(setNumerosOcupados);
       }
@@ -104,7 +116,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
   const handleSimular = async () => {
       if(!selectedRifa || !selectedNumbers.length || !clientUser) return;
       try {
-        await fetch('http://localhost:3001/api/simular-pagamento', { 
+        await fetch(`${API_URL}/api/simular-pagamento`, { 
           method: 'POST', 
           headers: {'Content-Type': 'application/json'}, 
           body: JSON.stringify({ 
@@ -113,10 +125,13 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
             clienteId: clientUser.id 
           }) 
         });
-        alert("Pagamento Simulado com Sucesso!"); 
-        window.location.reload();
+        toast.success("Pagamento Simulado com Sucesso!"); 
+        // Aguarda 1.5s para a cliente ler a notificação antes de recarregar a tela
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } catch(e) { 
-        alert("Erro na simulação."); 
+        toast.error("Erro na simulação do pagamento."); 
       }
   };
 
@@ -193,7 +208,6 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                       className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${isSorteada ? 'grayscale-[0.5]' : ''}`} 
                     />
                     
-                    {/* Badge de Sorteada */}
                     {isSorteada && (
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                         <div className="bg-white text-green-600 px-4 py-2 rounded-lg font-black flex items-center gap-2 shadow-xl transform -rotate-3 border-2 border-green-600">
@@ -203,8 +217,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                     )}
 
                     <div className="absolute top-4 right-4 bg-white/95 backdrop-blur px-3 py-1.5 rounded-full text-sm font-bold shadow-lg text-pink-700 flex items-center gap-1">
-                      <DollarSign size={14} className="stroke-[3]" />
-                      {Number(rifa.valor_numero).toFixed(2)}
+                      {formatarReal(Number(rifa.valor_numero))}
                     </div>
                  </div>
                  
@@ -278,7 +291,6 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                         <div className="flex-1 p-6 overflow-y-auto">
                             {selectedNumbers.length > 0 ? (
                                 <div className="space-y-6">
-                                    {/* ALERTA DE RESERVA TEMPORÁRIA */}
                                     <div className="bg-blue-50 p-3 rounded-lg flex items-start gap-2 border border-blue-100 animate-pulse">
                                       <Calendar size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
                                       <p className="text-[11px] text-blue-700 leading-tight">
@@ -300,9 +312,10 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                                         <span className="text-gray-600">Quantidade</span>
                                         <span className="font-semibold">{selectedNumbers.length}</span>
                                       </div>
+                                      
                                       <div className="border-t border-gray-200 my-2 pt-2 flex justify-between items-center text-lg font-bold text-pink-600">
                                         <span>Total</span>
-                                        <span>R$ {(selectedNumbers.length * selectedRifa.valor_numero).toFixed(2)}</span>
+                                        <span>{formatarReal(selectedNumbers.length * selectedRifa.valor_numero)}</span>
                                       </div>
                                     </div>
 
