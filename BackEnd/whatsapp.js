@@ -26,10 +26,14 @@ client.initialize();
 // Função que vamos exportar para usar no server.js
 const enviarMensagemZap = async (telefone, mensagem) => {
     try {
-        // Limpa a formatação (tira parênteses, traços e espaços)
+        // 👇 ESCUDO DE SEGURANÇA: Se não tiver telefone, o robô cancela o envio em silêncio
+        if (!telefone) {
+            console.log("⚠️ Aviso: Tentativa de envio de WhatsApp sem número de telefone.");
+            return;
+        }
+
         let numeroLimpo = telefone.replace(/\D/g, '');
         
-        // Garante que tem o 55 (DDI do Brasil) na frente
         if (!numeroLimpo.startsWith('55')) {
             numeroLimpo = `55${numeroLimpo}`;
         }

@@ -122,11 +122,12 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
           body: JSON.stringify({ 
             rifaId: selectedRifa.id, 
             numeros: selectedNumbers,
-            clienteId: clientUser.id 
+            clienteId: clientUser.id,
+            nome: compradorInfo.nome,         // <-- AGORA ENVIAMOS O NOME
+            telefone: compradorInfo.telefone  // <-- E O TELEFONE PARA O BANCO
           }) 
         });
         toast.success("Pagamento Simulado com Sucesso!"); 
-        // Aguarda 1.5s para a cliente ler a notificação antes de recarregar a tela
         setTimeout(() => {
           window.location.reload();
         }, 1500);

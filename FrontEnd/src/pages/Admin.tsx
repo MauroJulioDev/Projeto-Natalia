@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Lock, LogOut, UserPlus, ShoppingBag, GraduationCap, MessageCircle, User, Key, 
   ChevronRight, LayoutDashboard, Search, AlertCircle, Download, Plus, Edit, Trash2, X, Save, Upload, Image as ImageIcon,
-  Trophy, Medal, Loader2, Sparkles
+  Trophy, Medal, Loader2, Sparkles,
 } from 'lucide-react';
 import { Card, Button } from '../components/UI';
-import toast from 'react-hot-toast'; // Importação do Toast mantida!
+import toast from 'react-hot-toast';
 
 interface AdminProps { logout: () => void; }
 
-// Define a URL base da API puxando do .env (com fallback de segurança)
 const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
 
 // ============================================================================
@@ -25,6 +24,10 @@ export default function Admin({ logout }: AdminProps) {
   // Estados do Sorteador
   const [isSorteando, setIsSorteando] = useState(false);
   const [resultadoSorteio, setResultadoSorteio] = useState<{numero: number, ganhador: string, premio: string} | null>(null);
+  
+  // NOVO: Estados do Modal de Confirmação Premium
+  const [showSorteioModal, setShowSorteioModal] = useState(false);
+  const [rifaParaSortear, setRifaParaSortear] = useState<any | null>(null);
 
   // Estados do Gerenciamento de Rifas (Modal)
   const [isRifaModalOpen, setIsRifaModalOpen] = useState(false);
@@ -36,7 +39,6 @@ export default function Admin({ logout }: AdminProps) {
     imagem_url: '' 
   });
 
-  // Função auxiliar para pegar o token salvo e montar o cabeçalho seguro
   const getAuthHeaders = () => {
     const token = localStorage.getItem('admin_token');
     return {
@@ -45,7 +47,6 @@ export default function Admin({ logout }: AdminProps) {
     };
   };
 
-  // --- BUSCA DE DADOS ---
   const fetchData = () => {
     setLoading(true);
     fetch(`${API_URL}/api/${activeTab}`, {
@@ -67,43 +68,42 @@ export default function Admin({ logout }: AdminProps) {
     fetchData();
   }, [activeTab]);
 
-  // Logout Seguro (Limpa o Token)
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
     logout();
   };
 
-  // --- LÓGICA DE SORTEIO (OFFICIAL COM JWT) ---
-  const handleSortear = async (rifa: any) => {
-    if (!window.confirm(`ATENÇÃO: Deseja realizar o sorteio da rifa "${rifa.nome_premio}" agora?`)) return;
+  // --- LÓGICA DE SORTEIO ATUALIZADA ---
+  const handleRealizarSorteio = async () => {
+    if (!rifaParaSortear) return;
     
     setIsSorteando(true);
     try {
-      const res = await fetch(`${API_URL}/api/rifas/${rifa.id}/sortear`, { 
+      const res = await fetch(`${API_URL}/api/rifas/${rifaParaSortear.id}/sortear`, { 
         method: 'POST',
         headers: getAuthHeaders() 
       });
       const resData = await res.json();
       
       if (res.ok) {
-        toast.success("Sorteio realizado com sucesso!"); // Toast de Sucesso
+        setShowSorteioModal(false); // Fecha o modal de confirmação
+        toast.success("Sorteio realizado com sucesso!"); 
         setResultadoSorteio({ 
           numero: resData.numero, 
           ganhador: resData.ganhador,
-          premio: rifa.nome_premio 
+          premio: rifaParaSortear.nome_premio 
         });
         fetchData(); 
       } else {
-        toast.error(resData.message || "Erro ao realizar sorteio."); // Toast de Erro
+        toast.error(resData.message || "Erro ao realizar sorteio."); 
       }
     } catch (error) {
-      toast.error("Erro de conexão com o servidor."); // Toast de Erro
+      toast.error("Erro de conexão com o servidor."); 
     } finally {
       setIsSorteando(false);
     }
   };
 
-  // --- GERENCIAMENTO DE RIFAS (CRUD COM JWT) ---
   const handleOpenRifaModal = (rifa?: any) => {
     if (rifa) {
       setEditingRifa(rifa);
@@ -136,14 +136,14 @@ export default function Admin({ logout }: AdminProps) {
         })
       });
       if (res.ok) {
-        toast.success(editingRifa ? "Rifa atualizada!" : "Rifa criada com sucesso!"); // Toast de Sucesso
+        toast.success(editingRifa ? "Rifa atualizada!" : "Rifa criada com sucesso!"); 
         setIsRifaModalOpen(false);
         fetchData();
       } else {
-        toast.error("Erro ao salvar rifa. Verifique sua permissão."); // Toast de Erro
+        toast.error("Erro ao salvar rifa. Verifique sua permissão."); 
       }
     } catch (error) {
-      toast.error("Erro de conexão ao salvar rifa."); // Toast de Erro
+      toast.error("Erro de conexão ao salvar rifa."); 
     }
   };
 
@@ -155,13 +155,13 @@ export default function Admin({ logout }: AdminProps) {
         headers: getAuthHeaders() 
       });
       if(res.ok) {
-        toast.success("Rifa excluída do sistema."); // Toast de Sucesso
+        toast.success("Rifa excluída do sistema."); 
         fetchData();
       } else {
-        toast.error("Erro ao excluir. Verifique sua permissão."); // Toast de Erro
+        toast.error("Erro ao excluir. Verifique sua permissão."); 
       }
     } catch (error) {
-      toast.error("Erro de conexão."); // Toast de Erro
+      toast.error("Erro de conexão."); 
     }
   };
 
@@ -174,7 +174,6 @@ export default function Admin({ logout }: AdminProps) {
     }
   };
 
-  // --- AUXILIARES ---
   const handleZap = (tel: string) => window.open(`https://wa.me/55${tel.replace(/\D/g, '')}`, '_blank');
   
   const filteredData = data.filter((item: any) => {
@@ -183,7 +182,6 @@ export default function Admin({ logout }: AdminProps) {
     return name.includes(searchStr);
   });
 
-  // --- RENDERIZAÇÃO DE TABELAS ---
   const renderTableHeaders = () => {
     switch(activeTab) {
       case 'consultoras': return <><th className="p-4">Consultora</th><th className="p-4">WhatsApp</th><th className="p-4">Cidade/UF</th><th className="p-4 text-center">Ações</th></>;
@@ -239,7 +237,7 @@ export default function Admin({ logout }: AdminProps) {
             <div className="flex justify-center gap-2">
               {!isSorteada && percent >= 100 && (
                 <button 
-                  onClick={() => handleSortear(item)}
+                  onClick={() => { setRifaParaSortear(item); setShowSorteioModal(true); }}
                   className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md flex items-center gap-1 transition-all transform hover:scale-105"
                 >
                   <Trophy size={14} /> Sortear
@@ -320,6 +318,60 @@ export default function Admin({ logout }: AdminProps) {
         </Card>
       </main>
 
+      {/* ======================================================================= */}
+      {/* MODAL DE CONFIRMAÇÃO DE SORTEIO (PREMIUM) */}
+      {/* ======================================================================= */}
+      {showSorteioModal && rifaParaSortear && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm" onClick={() => !isSorteando && setShowSorteioModal(false)}></div>
+          
+          <div className="relative bg-white rounded-[2rem] shadow-2xl max-w-md w-full overflow-hidden animate-scale-in border border-gray-100">
+            <div className="bg-gradient-to-br from-yellow-400 via-yellow-500 to-orange-500 p-10 text-center relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-40 h-40 bg-white/30 rounded-full blur-3xl -mr-10 -mt-10"></div>
+               <div className="absolute bottom-0 left-0 w-32 h-32 bg-orange-600/20 rounded-full blur-2xl -ml-10 -mb-10"></div>
+               
+               <Trophy size={64} className="text-white mx-auto mb-4 drop-shadow-lg animate-bounce" />
+               <h3 className="text-3xl font-black text-white drop-shadow-md tracking-tight">Realizar Sorteio</h3>
+            </div>
+
+            <div className="p-8 text-center bg-white">
+              <p className="text-gray-500 font-medium mb-3 uppercase tracking-widest text-xs">
+                Rifa Selecionada:
+              </p>
+              <p className="text-2xl font-black text-gray-800 mb-8 bg-gray-50 py-4 px-2 rounded-2xl border-2 border-dashed border-gray-200 line-clamp-2">
+                {rifaParaSortear.nome_premio}
+              </p>
+              
+              <div className="bg-red-50 border border-red-100 text-red-800 p-4 rounded-2xl text-sm mb-8 flex items-start gap-3 text-left shadow-sm">
+                <AlertCircle className="shrink-0 mt-0.5 text-red-500" size={20} />
+                <p><strong className="font-black">Ação Irreversível:</strong> O sistema escolherá um número aleatório entre os compradores. O vencedor não poderá ser alterado depois.</p>
+              </div>
+
+              <div className="flex gap-4">
+                <Button 
+                  onClick={() => setShowSorteioModal(false)}
+                  className="flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 shadow-none border-none py-4 font-bold rounded-xl"
+                  disabled={isSorteando} 
+                >
+                  Cancelar
+                </Button>
+                
+                <Button 
+                  onClick={handleRealizarSorteio} 
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-xl shadow-green-200 border-none py-4 font-black rounded-xl transform transition hover:-translate-y-1"
+                  disabled={isSorteando}
+                >
+                  {isSorteando ? <Loader2 className="animate-spin mx-auto" size={24} /> : 'Sortear Agora! 🏆'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================= */}
+      {/* MODAL DE RESULTADO FINAL */}
+      {/* ======================================================================= */}
       {resultadoSorteio && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-pink-950/60 backdrop-blur-md animate-fade-in" onClick={() => setResultadoSorteio(null)}></div>
@@ -343,6 +395,9 @@ export default function Admin({ logout }: AdminProps) {
         </div>
       )}
 
+      {/* ======================================================================= */}
+      {/* MODAL DE CRIAR/EDITAR RIFA */}
+      {/* ======================================================================= */}
       {isRifaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setIsRifaModalOpen(false)}></div>
@@ -388,7 +443,7 @@ export default function Admin({ logout }: AdminProps) {
 }
 
 // ============================================================================
-// COMPONENTE: ADMIN LOGIN (COM JWT REAL E CSS CORRIGIDO)
+// COMPONENTE: ADMIN LOGIN
 // ============================================================================
 export function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [user, setUser] = useState('');
@@ -397,9 +452,6 @@ export function AdminLogin({ onLogin }: { onLogin: () => void }) {
   
   const submit = async (e: any) => {
     e.preventDefault();
-    // LINHA DE TESTE: O Toast tem que aparecer imediatamente ao clicar!
-    toast("O botão foi clicado e o Toast está vivo!", { icon: '👀' }); 
-    
     setIsLoading(true);
 
     try {
@@ -413,18 +465,18 @@ export function AdminLogin({ onLogin }: { onLogin: () => void }) {
 
       if (res.ok) {
         localStorage.setItem('admin_token', data.token);
-        toast.success("Login realizado com sucesso! Bem-vinda."); // Toast de Sucesso
+        toast.success("Login realizado com sucesso! Bem-vinda."); 
         onLogin();
       } else {
-        toast.error(data.message || "Credenciais incorretas."); // Toast de Erro
+        toast.error(data.message || "Credenciais incorretas."); 
       }
     } catch (error) {
       if (user === 'admin' && pass === 'admin123') {
-        toast.success("Entrando em modo de teste."); // Toast de Sucesso para fallback
+        toast.success("Entrando em modo de teste."); 
         localStorage.setItem('admin_token', 'token_provisorio_de_desenvolvimento');
         onLogin();
       } else {
-        toast.error("Erro ao conectar com servidor."); // Toast de Erro
+        toast.error("Erro ao conectar com servidor."); 
       }
     } finally {
       setIsLoading(false);

@@ -68,23 +68,29 @@ app.post('/api/auth/admin-login', (req, res) => {
     }
 });
 
-// Registro Seguro de Cliente (Com Hash)
+// Registro Seguro de Cliente (Agora checando se o Telefone já existe)
 app.post('/api/auth/register', async (req, res) => {
     const { nome, email, telefone, senha, foto_perfil } = req.body;
-    if (!nome || !email || !senha) return res.status(400).send({ message: "Preencha tudo." });
+    
+    // O e-mail agora pode ser opcional, mas o telefone é obrigatório!
+    if (!nome || !telefone || !senha) return res.status(400).send({ message: "Preencha nome, telefone e senha." });
     
     try {
-        db.query("SELECT * FROM clientes WHERE email = ?", [email], async (err, results) => {
-            if (err) return res.status(500).send({ message: "Erro banco." });
-            if (results.length > 0) return res.status(409).send({ message: "Email em uso." });
+        // 👇 MUDANÇA: Agora checamos se o TELEFONE já está em uso, em vez do e-mail
+        db.query("SELECT * FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
+            if (err) return res.status(500).send({ message: "Erro no banco." });
+            if (results.length > 0) return res.status(409).send({ message: "Este WhatsApp já está cadastrado!" });
             
             // Criptografa a senha antes de salvar
             const salt = await bcrypt.genSalt(10);
             const senhaHash = await bcrypt.hash(senha, salt);
 
             const sql = "INSERT INTO clientes (nome, email, telefone, senha, foto_perfil) VALUES (?, ?, ?, ?, ?)";
-            db.query(sql, [nome, email, telefone, senhaHash, foto_perfil], (err, result) => {
-                if (err) return res.status(500).json({ message: "Erro ao cadastrar." });
+            db.query(sql, [nome, email || '', telefone, senhaHash, foto_perfil || ''], (err, result) => {
+                if (err) {
+                    console.error("ERRO DO MYSQL:", err);
+                    return res.status(500).json({ message: "Erro ao cadastrar." });
+                }
                 res.status(201).json({ id: result.insertId, message: "Usuário criado!" });
             });
         });
@@ -93,12 +99,14 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-// Login Seguro de Cliente (Com JWT)
+// Login Seguro de Cliente (Agora logando com o TELEFONE)
 app.post('/api/auth/login', (req, res) => {
-    const { email, senha } = req.body;
+    // 👇 MUDANÇA: Recebemos telefone em vez de e-mail
+    const { telefone, senha } = req.body;
 
-    db.query("SELECT * FROM clientes WHERE email = ?", [email], async (err, results) => {
-        if (err || results.length === 0) return res.status(401).json({ message: "Usuário não encontrado." });
+    // 👇 MUDANÇA: Buscamos no banco pelo telefone
+    db.query("SELECT * FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
+        if (err || results.length === 0) return res.status(401).json({ message: "WhatsApp não cadastrado." });
 
         const user = results[0];
 
@@ -107,11 +115,11 @@ app.post('/api/auth/login', (req, res) => {
         if (!senhaValida) return res.status(401).json({ message: "Senha incorreta." });
 
         // Gera o Token de sessão
-        const token = jwt.sign({ id: user.id, email: user.email }, SECRET_KEY, { expiresIn: '2h' });
+        const token = jwt.sign({ id: user.id, telefone: user.telefone }, SECRET_KEY, { expiresIn: '2h' });
 
         res.json({
             token,
-            user: { id: user.id, nome: user.nome, email: user.email, foto_perfil: user.foto_perfil }
+            user: { id: user.id, nome: user.nome, email: user.email, foto_perfil: user.foto_perfil, telefone: user.telefone }
         });
     });
 });
@@ -346,12 +354,44 @@ app.post('/api/webhook/mercadopago', async (req, res) => {
 });
 
 app.post('/api/simular-pagamento', (req, res) => {
-    const { rifaId, numeros } = req.body;
+    const { rifaId, numeros, clienteId, nome, telefone } = req.body;
+    
     const placeholders = numeros.map(() => '?').join(',');
-    db.query(`UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`, [rifaId, ...numeros], (err) => {
-        if(err) return res.status(500).send(err); 
-        db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numeros.length, rifaId]);
-        res.send({message:"Ok"});
+    
+    // 1. Limpa qualquer reserva anterior
+    db.query(`DELETE FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders})`, [rifaId, ...numeros], () => {
+        
+        // 2. Insere como Pago
+        const values = numeros.map(num => [rifaId, num, clienteId, nome || 'Teste', telefone || '00000000000', 'Pago', `simulacao_${Date.now()}`]);
+        
+        db.query("INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?", [values], (err) => {
+            if(err) return res.status(500).send(err); 
+            
+            // 3. Atualiza a barrinha da Rifa
+            db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numeros.length, rifaId], () => {
+                
+                // 🚀 4. NOVO: CHECAGEM DE 100% VENDIDO
+                db.query("SELECT nome_premio, total_numeros, numeros_vendidos FROM rifas WHERE id = ?", [rifaId], (err, results) => {
+                    if (results && results.length > 0) {
+                        const rifa = results[0];
+                        
+                        // Se os números vendidos forem iguais (ou maiores) que o total da rifa
+                        if (rifa.numeros_vendidos >= rifa.total_numeros) {
+                            const adminZap = process.env.ADMIN_WHATSAPP;
+                            
+                            if (adminZap) {
+                                const mensagemAdmin = `🚨 *ALERTA DE RIFA LOTADA!* 🚨\n\nA rifa *"${rifa.nome_premio}"* acabou de atingir 100% de vendas!\n\nAcesse o painel Admin agora para realizar o sorteio e anunciar o vencedor! 🏆`;
+                                
+                                // Chama o nosso robô para avisar a Natália
+                                enviarMensagemZap(adminZap, mensagemAdmin);
+                            }
+                        }
+                    }
+                });
+
+                res.send({message:"Ok"});
+            });
+        });
     });
 });
 
