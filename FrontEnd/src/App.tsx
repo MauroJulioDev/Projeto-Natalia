@@ -4,6 +4,7 @@ import { ShoppingBag, Menu, User, Lock, X } from 'lucide-react';
 import { ClienteUser } from './types';
 // Importação atualizada para trazer o disparador (toast) e o injetor (Toaster)
 import toast, { Toaster } from 'react-hot-toast';
+import Consultora from './pages/Consultora';
 
 // --- IMPORTAÇÃO DAS PÁGINAS ---
 import Home from './pages/Home';
@@ -25,7 +26,7 @@ export default function App() {
   const TEMPO_LIMITE_INATIVIDADE = 30 * 60 * 1000; // 30 minutos em milissegundos
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
 
     const resetarTempo = () => {
       clearTimeout(timeoutId);
@@ -197,6 +198,7 @@ export default function App() {
             />
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/consultora" element={<Consultora />} />
         </Routes>
       </main>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Lock, LogOut, UserPlus, ShoppingBag, GraduationCap, MessageCircle, User, Key, 
   ChevronRight, LayoutDashboard, Search, AlertCircle, Download, Plus, Edit, Trash2, X, Save, Upload, Image as ImageIcon,
-  Trophy, Medal, Loader2, Sparkles,
+  Trophy, Medal, Loader2, Sparkles, Crown,
 } from 'lucide-react';
 import { Card, Button } from '../components/UI';
 import toast from 'react-hot-toast';
@@ -25,7 +25,7 @@ export default function Admin({ logout }: AdminProps) {
   const [isSorteando, setIsSorteando] = useState(false);
   const [resultadoSorteio, setResultadoSorteio] = useState<{numero: number, ganhador: string, premio: string} | null>(null);
   
-  // NOVO: Estados do Modal de Confirmação Premium
+  // Estados do Modal de Confirmação Premium
   const [showSorteioModal, setShowSorteioModal] = useState(false);
   const [rifaParaSortear, setRifaParaSortear] = useState<any | null>(null);
 
@@ -38,6 +38,21 @@ export default function Admin({ logout }: AdminProps) {
     valor_numero: '10', 
     imagem_url: '' 
   });
+
+  // Estados do Ranking no Admin
+  const [showRankingModal, setShowRankingModal] = useState(false);
+  const [rankingData, setRankingData] = useState<any[]>([]);
+  const [rifaParaRanking, setRifaParaRanking] = useState<any | null>(null);
+
+  const handleVerRanking = async (rifa: any) => {
+    setRifaParaRanking(rifa);
+    setShowRankingModal(true);
+    try {
+      const res = await fetch(`${API_URL}/api/rifas/${rifa.id}/ranking`);
+      const data = await res.json();
+      setRankingData(data);
+    } catch(e) { toast.error("Erro ao carregar ranking"); }
+  };
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('admin_token');
@@ -73,7 +88,6 @@ export default function Admin({ logout }: AdminProps) {
     logout();
   };
 
-  // --- LÓGICA DE SORTEIO ATUALIZADA ---
   const handleRealizarSorteio = async () => {
     if (!rifaParaSortear) return;
     
@@ -86,7 +100,7 @@ export default function Admin({ logout }: AdminProps) {
       const resData = await res.json();
       
       if (res.ok) {
-        setShowSorteioModal(false); // Fecha o modal de confirmação
+        setShowSorteioModal(false); 
         toast.success("Sorteio realizado com sucesso!"); 
         setResultadoSorteio({ 
           numero: resData.numero, 
@@ -243,8 +257,10 @@ export default function Admin({ logout }: AdminProps) {
                   <Trophy size={14} /> Sortear
                 </button>
               )}
-              <button onClick={() => handleOpenRifaModal(item)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg"><Edit size={16}/></button>
-              <button onClick={() => handleDeleteRifa(item.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button>
+              {/* --- BOTÃO DE VER RANKING --- */}
+              <button onClick={() => handleVerRanking(item)} title="Ver Top Compradores" className="text-yellow-600 hover:bg-yellow-50 p-2 rounded-lg transition-colors"><Crown size={16}/></button>
+              <button onClick={() => handleOpenRifaModal(item)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors"><Edit size={16}/></button>
+              <button onClick={() => handleDeleteRifa(item.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
             </div>
           </td>
         </tr>
@@ -318,9 +334,7 @@ export default function Admin({ logout }: AdminProps) {
         </Card>
       </main>
 
-      {/* ======================================================================= */}
-      {/* MODAL DE CONFIRMAÇÃO DE SORTEIO (PREMIUM) */}
-      {/* ======================================================================= */}
+      {/* MODAL DE CONFIRMAÇÃO DE SORTEIO */}
       {showSorteioModal && rifaParaSortear && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm" onClick={() => !isSorteando && setShowSorteioModal(false)}></div>
@@ -369,9 +383,47 @@ export default function Admin({ logout }: AdminProps) {
         </div>
       )}
 
-      {/* ======================================================================= */}
+      {/* MODAL DE RANKING NO ADMIN */}
+      {showRankingModal && rifaParaRanking && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm" onClick={() => setShowRankingModal(false)}></div>
+          <div className="relative bg-white rounded-[2rem] shadow-2xl max-w-md w-full overflow-hidden animate-scale-in border border-gray-100">
+            <div className="bg-gradient-to-br from-yellow-400 to-orange-500 p-8 text-center">
+               <Crown size={48} className="text-white mx-auto mb-2 drop-shadow-lg" />
+               <h3 className="text-2xl font-black text-white drop-shadow-md">Top Compradores</h3>
+               <p className="text-yellow-100 text-sm mt-1">{rifaParaRanking.nome_premio}</p>
+            </div>
+            <div className="p-6 bg-gray-50">
+              {rankingData.length > 0 ? (
+                <div className="space-y-3">
+                  {rankingData.map((user, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                       <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-white text-sm
+                             ${idx === 0 ? 'bg-yellow-400' : idx === 1 ? 'bg-gray-400' : 'bg-orange-400'}`}>
+                             {idx + 1}º
+                          </div>
+                          <div>
+                            <span className="font-bold text-gray-800 block text-sm">{user.comprador_nome}</span>
+                            <span className="text-xs text-pink-600 font-bold">{user.total_numeros} cotas compradas</span>
+                          </div>
+                       </div>
+                       <button onClick={() => handleZap(user.comprador_telefone)} title={`Mensagem para ${user.comprador_telefone}`} className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors">
+                         <MessageCircle size={16} />
+                       </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-400 py-4 font-medium">Nenhum número pago ainda.</p>
+              )}
+              <Button onClick={() => setShowRankingModal(false)} className="w-full mt-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl shadow-none">Fechar Ranking</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE RESULTADO FINAL */}
-      {/* ======================================================================= */}
       {resultadoSorteio && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-pink-950/60 backdrop-blur-md animate-fade-in" onClick={() => setResultadoSorteio(null)}></div>
@@ -395,9 +447,7 @@ export default function Admin({ logout }: AdminProps) {
         </div>
       )}
 
-      {/* ======================================================================= */}
       {/* MODAL DE CRIAR/EDITAR RIFA */}
-      {/* ======================================================================= */}
       {isRifaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setIsRifaModalOpen(false)}></div>
