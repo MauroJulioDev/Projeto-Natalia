@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mail, Lock, Phone, User, Eye, EyeOff, LogIn, UserPlus, LogOut, Ticket, ArrowRight, ShieldCheck, Loader2, CheckCircle2, Clock, Trophy, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Phone, User, Eye, EyeOff, LogIn, UserPlus, LogOut, Ticket, ArrowRight, ShieldCheck, Loader2, CheckCircle2, Clock, Trophy, AlertCircle, MessageCircle } from 'lucide-react';
 import { Card, Button } from '../components/UI';
 import { ClienteUser } from '../types';
 import toast from 'react-hot-toast';
@@ -27,6 +27,9 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
 
   const [historico, setHistorico] = useState<any[]>([]);
 
+  // ⚠️ ATENÇÃO: Coloque o número real da Natália aqui (DDI + DDD + Número)
+  const numeroAdmin = "5561999999999"; 
+
   useEffect(() => {
     if (user) {
       fetch(`${API_URL}/api/clientes/${user.id}/historico`)
@@ -47,7 +50,7 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
         grupos[item.nome_premio] = {
           nome_premio: item.nome_premio,
           imagem_url: item.imagem_url,
-          vencedor_numero: item.vencedor_numero, // <-- Agora pegamos o ganhador!
+          vencedor_numero: item.vencedor_numero, 
           numeros_pagos: [],
           numeros_reservados: []
         };
@@ -66,6 +69,25 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
       numeros_reservados: rifa.numeros_reservados.sort((a: number, b: number) => a - b)
     }));
   }, [historico]);
+
+  // --- SISTEMA ANTI-BLOQUEIO DE WHATSAPP (SPINTAX) PARA O CLIENTE ---
+  const handleFalarComSuporte = (nomePremio: string, tipo: 'ganhador' | 'duvida') => {
+    if (!user) return;
+    
+    const saudacoes = ["Oi Natália", "Olá Natália", "Oie Natália", "Tudo bem Natália?"];
+    const saudacao = saudacoes[Math.floor(Math.random() * saudacoes.length)];
+    const codigoUnico = Math.floor(Math.random() * 9999);
+    
+    let texto = '';
+    
+    if (tipo === 'ganhador') {
+      texto = `${saudacao}, sou a ${user.nome.split(' ')[0]}! O sistema me avisou que eu GANHEI a rifa "${nomePremio}"! Vim combinar a entrega do meu prêmio! (Ref: #${codigoUnico})`;
+    } else {
+      texto = `${saudacao}! Me chamo ${user.nome.split(' ')[0]} e estou com uma dúvida sobre a rifa "${nomePremio}". Pode me ajudar? (Atendimento #${codigoUnico})`;
+    }
+
+    window.open(`https://wa.me/${numeroAdmin}?text=${encodeURIComponent(texto)}`, '_blank');
+  };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, ''); 
@@ -175,11 +197,22 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
 
                         {/* Lado Direito: Informações */}
                         <div className="p-6 md:p-8 flex-1 flex flex-col justify-center bg-white relative">
-                          <h4 className="text-xl md:text-2xl font-black text-gray-800 mb-6 pr-4">{rifa.nome_premio}</h4>
+                          <div className="flex justify-between items-start gap-4 mb-6">
+                            <h4 className="text-xl md:text-2xl font-black text-gray-800 leading-tight">{rifa.nome_premio}</h4>
+                            
+                            {/* NOVO: Botão de Suporte do WhatsApp */}
+                            <button 
+                              onClick={() => handleFalarComSuporte(rifa.nome_premio, clienteGanhou ? 'ganhador' : 'duvida')}
+                              className={`shrink-0 flex items-center justify-center gap-2 p-3 rounded-xl font-bold text-sm transition-all shadow-sm ${clienteGanhou ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-200 animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700'}`}
+                              title={clienteGanhou ? "Resgatar Prêmio" : "Tirar dúvida via WhatsApp"}
+                            >
+                              <MessageCircle size={20} /> <span className="hidden sm:inline">{clienteGanhou ? 'Resgatar Prêmio' : 'Suporte'}</span>
+                            </button>
+                          </div>
                           
                           {/* AVISOS DE SORTEIO */}
                           {clienteGanhou ? (
-                            <div className="mb-6 bg-gradient-to-r from-yellow-400 to-orange-500 p-4 rounded-2xl text-white shadow-lg shadow-yellow-200 animate-pulse">
+                            <div className="mb-6 bg-gradient-to-r from-yellow-400 to-orange-500 p-4 rounded-2xl text-white shadow-lg shadow-yellow-200">
                               <h5 className="font-black flex items-center gap-2 text-lg"><Trophy size={20} /> PARABÉNS, VOCÊ GANHOU!</h5>
                               <p className="text-sm font-medium mt-1">Seu número da sorte <strong>#{rifa.vencedor_numero}</strong> foi o grande vencedor!</p>
                             </div>
@@ -239,7 +272,7 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                   <Ticket size={64} className="mx-auto text-gray-300 mb-6 stroke-1"/>
                   <h3 className="text-2xl font-black text-gray-800 mb-2">Cartela Vazia</h3>
                   <p className="text-gray-500 font-medium mb-8 max-w-sm mx-auto">Você ainda não escolheu nenhum número. Que tal participar agora?</p>
-                  <Button onClick={redirectAfterLogin} className="bg-pink-600 px-8 py-4 text-lg font-bold">Ver Rifas Disponíveis</Button>
+                  <Button onClick={redirectAfterLogin} className="bg-pink-600 px-8 py-4 text-lg font-bold shadow-lg">Ver Rifas Disponíveis</Button>
                 </div>
               )}
             </div>

@@ -8,9 +8,8 @@ import { Toaster } from 'react-hot-toast';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <App />
-      {/* 2. Colocamos ele aqui. Agora ele vai aparecer em TODAS as páginas, sem exceção! */}
       <Toaster position="top-right" reverseOrder={false} />
     </BrowserRouter>
   </React.StrictMode>,

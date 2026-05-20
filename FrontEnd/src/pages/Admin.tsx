@@ -188,7 +188,17 @@ export default function Admin({ logout }: AdminProps) {
     }
   };
 
-  const handleZap = (tel: string) => window.open(`https://wa.me/55${tel.replace(/\D/g, '')}`, '_blank');
+  // --- SISTEMA ANTI-BLOQUEIO DE WHATSAPP (SPINTAX) ---
+  const handleZap = (tel: string, nomeCliente?: string) => {
+    const numeroLimpo = tel.replace(/\D/g, '');
+    const saudacoes = ["Oi", "Olá", "Tudo bem?", "Oie"];
+    const saudacao = saudacoes[Math.floor(Math.random() * saudacoes.length)];
+    const nome = nomeCliente ? ` ${nomeCliente.split(' ')[0]},` : ',';
+    const codigoUnico = Math.floor(Math.random() * 999);
+    const mensagemSpintax = `${saudacao}${nome} sou a Natália! Tudo certo por aí? (Atendimento #${codigoUnico})`;
+    
+    window.open(`https://wa.me/55${numeroLimpo}?text=${encodeURIComponent(mensagemSpintax)}`, '_blank');
+  };
   
   const filteredData = data.filter((item: any) => {
     const searchStr = searchTerm.toLowerCase();
@@ -212,7 +222,7 @@ export default function Admin({ logout }: AdminProps) {
         <td className={cellClass}><div className="font-bold text-gray-900">{item.nome}</div><div className="text-xs text-gray-400">{item.email}</div></td>
         <td className={cellClass}>{item.telefone}</td>
         <td className={cellClass}>{item.cidade || '-'}</td>
-        <td className={`${cellClass} text-center`}><button onClick={() => handleZap(item.telefone)} className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors"><MessageCircle size={16} /></button></td>
+        <td className={`${cellClass} text-center`}><button onClick={() => handleZap(item.telefone, item.nome)} className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors"><MessageCircle size={16} /></button></td>
       </tr>
     );
 
@@ -257,7 +267,6 @@ export default function Admin({ logout }: AdminProps) {
                   <Trophy size={14} /> Sortear
                 </button>
               )}
-              {/* --- BOTÃO DE VER RANKING --- */}
               <button onClick={() => handleVerRanking(item)} title="Ver Top Compradores" className="text-yellow-600 hover:bg-yellow-50 p-2 rounded-lg transition-colors"><Crown size={16}/></button>
               <button onClick={() => handleOpenRifaModal(item)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors"><Edit size={16}/></button>
               <button onClick={() => handleDeleteRifa(item.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
@@ -272,7 +281,7 @@ export default function Admin({ logout }: AdminProps) {
         <td className={cellClass}><div className="font-bold text-gray-900">{item.nome}</div></td>
         <td className={cellClass}><span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs">{item.nivel}</span></td>
         <td className={cellClass}>{new Date(item.data_interesse).toLocaleDateString()}</td>
-        <td className={`${cellClass} text-center`}><button onClick={() => handleZap(item.telefone)} className="text-green-600"><MessageCircle size={18}/></button></td>
+        <td className={`${cellClass} text-center`}><button onClick={() => handleZap(item.telefone, item.nome)} className="text-green-600"><MessageCircle size={18}/></button></td>
       </tr>
     );
   };
@@ -408,7 +417,7 @@ export default function Admin({ logout }: AdminProps) {
                             <span className="text-xs text-pink-600 font-bold">{user.total_numeros} cotas compradas</span>
                           </div>
                        </div>
-                       <button onClick={() => handleZap(user.comprador_telefone)} title={`Mensagem para ${user.comprador_telefone}`} className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors">
+                       <button onClick={() => handleZap(user.comprador_telefone, user.comprador_nome)} title={`Mensagem para ${user.comprador_nome}`} className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors">
                          <MessageCircle size={16} />
                        </button>
                     </div>
@@ -521,13 +530,7 @@ export function AdminLogin({ onLogin }: { onLogin: () => void }) {
         toast.error(data.message || "Credenciais incorretas."); 
       }
     } catch (error) {
-      if (user === 'admin' && pass === 'admin123') {
-        toast.success("Entrando em modo de teste."); 
-        localStorage.setItem('admin_token', 'token_provisorio_de_desenvolvimento');
-        onLogin();
-      } else {
-        toast.error("Erro ao conectar com servidor."); 
-      }
+      toast.error("Erro ao conectar com o servidor."); 
     } finally {
       setIsLoading(false);
     }

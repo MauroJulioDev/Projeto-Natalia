@@ -8,6 +8,9 @@ export default function Cadastro() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
+  // ⚠️ ATENÇÃO: Coloque o número real da Natália aqui (DDI + DDD + Número)
+  const numeroAdmin = "5561999999999"; 
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setStatus('loading');
@@ -24,8 +27,27 @@ export default function Cadastro() {
 
       if (!response.ok) throw new Error(data.message || 'Erro desconhecido ao salvar.');
 
+      // 1. Muda a tela para Sucesso
       setStatus('success');
-      setFormData({ nome: '', email: '', telefone: '', cidade: '' });
+      
+      // --- SISTEMA ANTI-BLOQUEIO (SPINTAX + PROTOCOLO) ---
+      // Sorteia um "Oi" diferente a cada clique
+      const saudacoes = ["Olá, Natália!", "Oi, Natália!", "Oie Natália, tudo bem?", "Olá!"];
+      const saudacaoSorteada = saudacoes[Math.floor(Math.random() * saudacoes.length)];
+
+      // Gera um protocolo único usando números aleatórios + os segundos atuais
+      const protocolo = Math.floor(Math.random() * 9999) + "-" + new Date().getSeconds();
+
+      // A mensagem agora é 100% exclusiva e nunca será lida como Spam pelo WhatsApp
+      const mensagem = `${saudacaoSorteada} Acabei de fazer meu cadastro no site para ser uma consultora. Meu nome é ${formData.nome} e vim pedir a aprovação da minha conta! (Protocolo: #${protocolo})`;
+      // --------------------------------------------------
+
+      const urlWhatsApp = `https://wa.me/${numeroAdmin}?text=${encodeURIComponent(mensagem)}`;
+
+      // 3. Tenta forçar a abertura do WhatsApp automaticamente (em uma nova aba)
+      window.open(urlWhatsApp, '_blank');
+
+      // OBS: Não limpamos o formData aqui para podermos usar o nome no botão de "backup" da tela de sucesso.
     } catch (error: any) {
       console.error("Erro no envio:", error);
       setErrorMessage(error.message || "Erro de conexão com o servidor.");
@@ -36,6 +58,11 @@ export default function Cadastro() {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);
     setFormData({ ...formData, telefone: formatted });
+  };
+
+  const resetarFormulario = () => {
+    setFormData({ nome: '', email: '', telefone: '', cidade: '' });
+    setStatus('idle');
   };
 
   return (
@@ -60,21 +87,32 @@ export default function Cadastro() {
           <div className="p-8 md:p-10">
             
             {status === 'success' ? (
-              // TELA DE SUCESSO
-              <div className="text-center py-12 animate-scale-in">
+              // TELA DE SUCESSO E REDIRECIONAMENTO WHATSAPP
+              <div className="text-center py-8 animate-scale-in flex flex-col items-center">
                 <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
                   <CheckCircle className="w-12 h-12 text-green-600" />
                 </div>
-                <h3 className="text-3xl font-bold text-gray-800 mb-4">Cadastro Recebido!</h3>
-                <p className="text-gray-500 mb-8 text-lg max-w-md mx-auto">
-                  Obrigada pelo interesse! Entrarei em contato pelo WhatsApp em breve para explicar os próximos passos.
+                <h3 className="text-3xl font-black text-gray-800 mb-4 tracking-tight">Cadastro Recebido!</h3>
+                <p className="text-gray-500 mb-8 text-base max-w-md mx-auto">
+                  Sua solicitação foi registrada. Se o seu WhatsApp não abriu automaticamente, clique no botão abaixo para falar com a Natália e agilizar sua aprovação.
                 </p>
-                <Button 
-                  onClick={() => setStatus('idle')}
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:-translate-y-1"
+                
+                {/* BOTÃO DE BACKUP COM PROTOCOLO ÚNICO */}
+                <a 
+                  href={`https://wa.me/${numeroAdmin}?text=${encodeURIComponent(`Olá, Natália! Sou a ${formData.nome}. Meu cadastro de consultora foi concluído no site e aguardo aprovação! (Ref: #${Math.floor(Math.random() * 9999)}-${new Date().getSeconds()})`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full max-w-sm py-4 mb-6 text-lg font-black bg-green-500 hover:bg-green-600 text-white rounded-2xl shadow-xl shadow-green-200 transition-all transform hover:-translate-y-1 flex items-center justify-center gap-3"
                 >
-                  Fazer Novo Cadastro
-                </Button>
+                  <Send size={24} /> Enviar Mensagem Agora
+                </a>
+
+                <button 
+                  onClick={resetarFormulario}
+                  className="text-sm font-bold text-gray-400 hover:text-pink-500 underline transition-colors"
+                >
+                  Voltar e fazer outro cadastro
+                </button>
               </div>
             ) : (
               // FORMULÁRIO
@@ -90,7 +128,7 @@ export default function Cadastro() {
                     <input 
                       required 
                       type="text" 
-                      className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
+                      className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-gray-50 hover:bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
                       placeholder="Ex: Maria da Silva" 
                       value={formData.nome} 
                       onChange={(e) => setFormData({...formData, nome: e.target.value})} 
@@ -109,7 +147,7 @@ export default function Cadastro() {
                       <input 
                         required 
                         type="tel" 
-                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
+                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-gray-50 hover:bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
                         placeholder="(00) 00000-0000" 
                         value={formData.telefone} 
                         onChange={handlePhoneChange} 
@@ -127,7 +165,7 @@ export default function Cadastro() {
                       <input 
                         required 
                         type="text" 
-                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
+                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-gray-50 hover:bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
                         placeholder="Ex: São Paulo - SP" 
                         value={formData.cidade} 
                         onChange={(e) => setFormData({...formData, cidade: e.target.value})} 
@@ -146,7 +184,7 @@ export default function Cadastro() {
                     <input 
                       required 
                       type="email" 
-                      className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
+                      className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl leading-5 bg-gray-50 hover:bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all shadow-sm" 
                       placeholder="seu@email.com" 
                       value={formData.email} 
                       onChange={(e) => setFormData({...formData, email: e.target.value})} 
@@ -157,7 +195,7 @@ export default function Cadastro() {
                 {/* Botão de Envio */}
                 <Button 
                   type="submit" 
-                  className="w-full py-4 text-lg font-bold bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-700 hover:to-pink-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-4" 
+                  className="w-full py-4 text-lg font-black bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-700 hover:to-pink-600 text-white rounded-xl shadow-xl shadow-pink-200 transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-4" 
                   disabled={status === 'loading'}
                 >
                   {status === 'loading' ? (
@@ -166,7 +204,7 @@ export default function Cadastro() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      Enviando...
+                      Processando...
                     </span>
                   ) : (
                     <>
@@ -177,7 +215,7 @@ export default function Cadastro() {
 
                 {/* Mensagem de Erro */}
                 {status === 'error' && (
-                  <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg animate-shake">
+                  <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl animate-shake shadow-sm">
                     <AlertCircle className="w-6 h-6 flex-shrink-0" />
                     <div>
                       <p className="font-bold text-sm">Ocorreu um erro ao enviar.</p>
@@ -186,8 +224,8 @@ export default function Cadastro() {
                   </div>
                 )}
                 
-                <p className="text-center text-xs text-gray-400 mt-4">
-                  Seus dados estão seguros e não serão compartilhados com terceiros.
+                <p className="text-center text-xs font-bold text-gray-400 mt-4 uppercase tracking-widest">
+                  Seus dados estão 100% seguros
                 </p>
               </form>
             )}

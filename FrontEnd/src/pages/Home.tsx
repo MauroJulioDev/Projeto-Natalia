@@ -72,7 +72,7 @@ export default function Home({ changePage }: HomeProps) {
             </div>
             <h3 className="text-2xl font-bold mb-3 text-gray-800">Rifas Exclusivas</h3>
             <p className="text-gray-600 mb-8 leading-relaxed flex-grow">
-              Participe dos nossos sorteios mensais e concorra a kits Tupperware completos e exclusivos.
+              Participe dos nossos sorteios e concorra a produtos Tupperware, desde linha completas quanto individuais, exclusivos.
             </p>
             <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2" onClick={() => changePage('rifas')}>
               Comprar Números <ArrowRight size={18} />
@@ -86,7 +86,7 @@ export default function Home({ changePage }: HomeProps) {
             </div>
             <h3 className="text-2xl font-bold mb-3 text-gray-800">Mentoria VIP</h3>
             <p className="text-gray-600 mb-8 leading-relaxed flex-grow">
-              Desenvolva habilidades de liderança e aprenda a gerenciar equipes de alta performance.
+              Desenvolva habilidades de vendas de alta performance através da minha mentoria.
             </p>
             <Button className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2" onClick={() => changePage('mentoria')}>
               Aplicar Agora <ArrowRight size={18} />

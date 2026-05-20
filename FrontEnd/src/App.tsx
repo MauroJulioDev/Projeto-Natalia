@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { ShoppingBag, Menu, User, Lock, X } from 'lucide-react';
+import { ShoppingBag, Menu, User, X } from 'lucide-react';
 import { ClienteUser } from './types';
-// Importação atualizada para trazer o disparador (toast) e o injetor (Toaster)
 import toast, { Toaster } from 'react-hot-toast';
 import Consultora from './pages/Consultora';
+import Footer from './components/Footer';
 
 // --- IMPORTAÇÃO DAS PÁGINAS ---
 import Home from './pages/Home';
@@ -13,6 +13,7 @@ import Cadastro from './pages/Cadastro';
 import Mentoria from './pages/Mentoria';
 import Admin, { AdminLogin } from './pages/Admin';
 import MinhaConta from './pages/MinhaConta';
+import Faq from './pages/Faq';
 
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -23,41 +24,31 @@ export default function App() {
   const location = useLocation();
 
   // --- SISTEMA DE EXPIRAÇÃO POR INATIVIDADE (30 MINUTOS) ---
-  const TEMPO_LIMITE_INATIVIDADE = 30 * 60 * 1000; // 30 minutos em milissegundos
+  const TEMPO_LIMITE_INATIVIDADE = 30 * 60 * 1000;
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const resetarTempo = () => {
       clearTimeout(timeoutId);
-      
-      // Só inicia o contador de expulsão se tiver alguém logado (Cliente ou Admin)
       if (clientUser || isAdminLogged) {
         timeoutId = setTimeout(() => {
-          // Desloga Cliente
           setClientUser(null);
           localStorage.removeItem('tupperware_client_user');
-          
-          // Desloga Admin
           setIsAdminLogged(false);
           localStorage.removeItem('admin_token');
-
-          // ALERTA MODERNO ADICIONADO AQUI:
-          toast.error("Sua sessão expirou por inatividade. Faça login novamente para sua segurança.", { duration: 5000 });
+          toast.error("Sua sessão expirou por inatividade. Faça login novamente.", { duration: 5000 });
           navigate('/');
         }, TEMPO_LIMITE_INATIVIDADE);
       }
     };
 
-    // Fica de olho se o usuário está mexendo no site
     window.addEventListener('mousemove', resetarTempo);
     window.addEventListener('keydown', resetarTempo);
     window.addEventListener('click', resetarTempo);
     window.addEventListener('scroll', resetarTempo);
+    resetarTempo();
 
-    resetarTempo(); // Dá o play no cronômetro
-
-    // Limpa os "olheiros" quando fechar a tela para não pesar a memória
     return () => {
       clearTimeout(timeoutId);
       window.removeEventListener('mousemove', resetarTempo);
@@ -66,13 +57,10 @@ export default function App() {
       window.removeEventListener('scroll', resetarTempo);
     };
   }, [clientUser, isAdminLogged, navigate]);
-  // ---------------------------------------------------------
 
-  // Recupera usuário cliente E o token de Admin salvos no navegador
   useEffect(() => {
     const storedUser = localStorage.getItem('tupperware_client_user');
     if (storedUser) setClientUser(JSON.parse(storedUser));
-
     const adminToken = localStorage.getItem('admin_token');
     if (adminToken) setIsAdminLogged(true);
   }, []);
@@ -87,7 +75,6 @@ export default function App() {
     localStorage.removeItem('tupperware_client_user');
   };
 
-  // Função de compatibilidade
   const handleNavigation = (page: string) => {
     setMobileMenuOpen(false);
     switch(page) {
@@ -101,17 +88,17 @@ export default function App() {
     }
   };
 
-  // Componente de Link do Menu
+  // Componente de Link do Menu (Otimizado para toque)
   const NavLink = ({ to, label }: { to: string, label: string }) => {
     const isActive = location.pathname === to;
     return (
       <Link 
         to={to} 
         onClick={() => setMobileMenuOpen(false)}
-        className={`text-sm font-medium px-4 py-2 rounded-full transition-all duration-200 ${
+        className={`text-base md:text-sm font-medium px-5 py-3 md:py-2 rounded-xl md:rounded-full transition-all duration-200 active:scale-95 ${
           isActive 
-            ? 'bg-pink-700 text-white shadow-md transform scale-105' 
-            : 'text-pink-100 hover:text-white hover:bg-pink-500'
+            ? 'bg-pink-800 md:bg-pink-700 text-white shadow-md md:transform md:scale-105' 
+            : 'text-pink-100 hover:text-white hover:bg-pink-500 bg-pink-700/50 md:bg-transparent'
         }`}
       >
         {label}
@@ -132,19 +119,17 @@ export default function App() {
     );
   }
 
-  // --- LAYOUT PRINCIPAL ---
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex flex-col text-gray-800">
       
-      {/* NAVBAR */}
       <nav className="bg-pink-600 shadow-lg sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex justify-between items-center">
+        <div className="container mx-auto px-4 h-16 md:h-20 flex justify-between items-center relative">
           
           <Link to="/" className="flex items-center gap-2 group" onClick={() => setMobileMenuOpen(false)}>
-            <div className="bg-white text-pink-600 p-2 rounded-full shadow-md group-hover:scale-110 transition-transform duration-300">
-              <ShoppingBag size={20} />
+            <div className="bg-white text-pink-600 p-2 md:p-2.5 rounded-full shadow-md group-hover:scale-110 transition-transform duration-300">
+              <ShoppingBag size={22} className="md:w-6 md:h-6" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-white ml-2">Mentora Tupperware</span>
+            <span className="text-xl md:text-2xl font-black tracking-tight text-white ml-1.5 md:ml-2">Nathy Tupper</span>
           </Link>
 
           <div className="hidden md:flex gap-2 items-center">
@@ -152,71 +137,64 @@ export default function App() {
             <NavLink to="/seja-consultora" label="Seja Consultora" />
             <NavLink to="/rifas" label="Rifas" />
             <NavLink to="/mentoria-vip" label="Mentoria VIP" />
+            <NavLink to="/faq" label="Dúvidas" />
             
             <Link 
               to="/minha-conta" 
-              className="ml-2 bg-white text-pink-600 px-5 py-2 rounded-full font-bold text-sm hover:bg-pink-50 flex items-center gap-2 transition-all shadow-sm hover:shadow-md"
+              className="ml-4 bg-white text-pink-600 px-6 py-2.5 rounded-full font-black text-sm hover:bg-pink-50 flex items-center gap-2 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
             >
-                <User size={16}/> {clientUser ? clientUser.nome.split(' ')[0] : 'Minha Conta'}
+                <User size={18} strokeWidth={2.5}/> {clientUser ? clientUser.nome.split(' ')[0] : 'Minha Conta'}
             </Link>
           </div>
 
           <button 
-            className="md:hidden text-white p-2 hover:bg-pink-700 rounded-lg transition-colors" 
+            className="md:hidden text-white p-2.5 bg-pink-700 hover:bg-pink-800 rounded-xl transition-colors shadow-inner active:scale-95" 
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
-            {mobileMenuOpen ? <X /> : <Menu />}
+            {mobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
           </button>
         </div>
 
+        {/* MENU MOBILE OTIMIZADO (PAINEL SUSPENSO ABSOLUTO) */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-pink-700 p-4 flex flex-col gap-2 shadow-inner border-t border-pink-500 animate-fade-in-down">
-            <NavLink to="/" label="Início" />
-            <NavLink to="/seja-consultora" label="Seja Consultora" />
-            <NavLink to="/rifas" label="Rifas" />
-            <NavLink to="/mentoria-vip" label="Mentoria VIP" />
-            <div className="border-t border-pink-600 pt-2 mt-2">
-              <NavLink to="/minha-conta" label={clientUser ? `Olá, ${clientUser.nome.split(' ')[0]}` : "Acessar Minha Conta"} />
+          <div className="md:hidden absolute top-[100%] left-0 w-full bg-pink-600 border-t border-pink-500 shadow-2xl shadow-pink-900/50 animate-fade-in-down z-40 pb-6 rounded-b-[2rem]">
+            <div className="p-4 flex flex-col gap-3">
+              <NavLink to="/" label="Início" />
+              <NavLink to="/seja-consultora" label="Seja Consultora" />
+              <NavLink to="/rifas" label="Rifas" />
+              <NavLink to="/mentoria-vip" label="Mentoria VIP" />
+              
+              <div className="border-t border-pink-500/50 pt-4 mt-2">
+                <Link 
+                  to="/minha-conta" 
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="bg-white text-pink-700 w-full py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-transform"
+                >
+                  <User size={24} strokeWidth={2.5}/> {clientUser ? `Olá, ${clientUser.nome.split(' ')[0]}` : "Acessar Minha Conta"}
+                </Link>
+              </div>
             </div>
           </div>
         )}
       </nav>
 
-      {/* CONTEÚDO (ROTAS) */}
-      <main className="flex-grow">
+      <main className="flex-grow flex flex-col">
         <Routes>
           <Route path="/" element={<Home changePage={handleNavigation} />} />
           <Route path="/seja-consultora" element={<Cadastro />} />
           <Route path="/rifas" element={<Rifas clientUser={clientUser} onRedirectLogin={() => navigate('/minha-conta')} />} />
           <Route path="/mentoria-vip" element={<Mentoria />} />
+          <Route path="/faq" element={<Faq />} />
           <Route path="/minha-conta" element={
-            <MinhaConta 
-              user={clientUser} 
-              onLogin={handleLogin} 
-              onLogout={handleLogout} 
-              redirectAfterLogin={() => navigate('/rifas')}
-            />
+            <MinhaConta user={clientUser} onLogin={handleLogin} onLogout={handleLogout} redirectAfterLogin={() => navigate('/rifas')} />
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="/consultora" element={<Consultora />} />
         </Routes>
       </main>
 
-      {/* FOOTER */}
-      <footer className="bg-gray-900 text-gray-300 py-10 border-t-4 border-pink-600 text-center text-sm">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col items-center justify-center gap-4">
-              <p className="opacity-80">&copy; {new Date().getFullYear()} Mentora Tupperware. Todos os direitos reservados.</p>
-              
-              <Link to="/admin" className="text-gray-600 hover:text-pink-500 transition-colors inline-flex items-center gap-2 px-4 py-2 rounded-full hover:bg-gray-800">
-                <Lock size={14}/> Acesso Administrativo
-              </Link>
-            </div>
-          </div>
-      </footer>
-      
-      {/* INJETOR DE NOTIFICAÇÕES (TOASTS) ADICIONADO AQUI! */}
       <Toaster position="top-right" reverseOrder={false} />
+      <Footer/>
     </div>
   );
 }
