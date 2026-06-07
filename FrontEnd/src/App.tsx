@@ -135,7 +135,7 @@ export default function App() {
           <div className="hidden md:flex gap-2 items-center">
             <NavLink to="/" label="Início" />
             <NavLink to="/seja-consultora" label="Seja Consultora" />
-            <NavLink to="/rifas" label="Rifas" />
+            <NavLink to="/rifas" label="Sorteios" />
             <NavLink to="/mentoria-vip" label="Mentoria VIP" />
             <NavLink to="/faq" label="Dúvidas" />
             
@@ -161,7 +161,7 @@ export default function App() {
             <div className="p-4 flex flex-col gap-3">
               <NavLink to="/" label="Início" />
               <NavLink to="/seja-consultora" label="Seja Consultora" />
-              <NavLink to="/rifas" label="Rifas" />
+              <NavLink to="/rifas" label="Sorteios" />
               <NavLink to="/mentoria-vip" label="Mentoria VIP" />
               
               <div className="border-t border-pink-500/50 pt-4 mt-2">

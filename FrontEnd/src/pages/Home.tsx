@@ -41,7 +41,7 @@ export default function Home({ changePage }: HomeProps) {
               className="bg-transparent text-white border-2 border-white hover:bg-white hover:text-pink-700 font-bold py-4 px-8 rounded-full shadow-lg transform transition hover:-translate-y-1"
               onClick={() => changePage('rifas')}
             >
-              Ver Rifas Disponíveis
+              Ver Sorteios Disponíveis
             </Button>
           </div>
         </div>
@@ -70,7 +70,7 @@ export default function Home({ changePage }: HomeProps) {
             <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-6 group-hover:bg-purple-200 transition-colors shadow-inner">
               <ShoppingBag className="text-purple-600 w-8 h-8" />
             </div>
-            <h3 className="text-2xl font-bold mb-3 text-gray-800">Rifas Exclusivas</h3>
+            <h3 className="text-2xl font-bold mb-3 text-gray-800">Sorteios Exclusivos</h3>
             <p className="text-gray-600 mb-8 leading-relaxed flex-grow">
               Participe dos nossos sorteios e concorra a produtos Tupperware, desde linha completas quanto individuais, exclusivos.
             </p>

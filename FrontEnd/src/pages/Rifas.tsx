@@ -49,7 +49,6 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     fetch(`${API_URL}/api/rifas`)
       .then(r => r.json())
       .then((data: Rifa[]) => {
-        // Ordena as rifas: Abertas primeiro, mais recentes primeiro
         const rifasOrdenadas = data.sort((a, b) => {
           const aEncerrada = a.vencedor_numero !== null && a.vencedor_numero !== undefined;
           const bEncerrada = b.vencedor_numero !== null && b.vencedor_numero !== undefined;
@@ -204,7 +203,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
           <Gift className="w-8 h-8 md:w-10 md:h-10 text-pink-600" />
         </div>
         <h2 className="text-4xl md:text-6xl font-black text-gray-900 mb-3 md:mb-4 tracking-tighter">
-          Rifas e Eventos
+          Sorteios e Eventos
         </h2>
         <p className="text-gray-500 text-base md:text-xl font-medium max-w-2xl mx-auto px-2">
           Escolha seus números da sorte e concorra a produtos especiais e exclusivos.
