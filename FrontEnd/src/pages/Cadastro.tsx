@@ -9,7 +9,7 @@ export default function Cadastro() {
   const [errorMessage, setErrorMessage] = useState('');
 
   // ⚠️ ATENÇÃO: Coloque o número real da Natália aqui (DDI + DDD + Número)
-  const numeroAdmin = "5561999999999"; 
+  const numeroAdmin = "5561998183567"; 
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

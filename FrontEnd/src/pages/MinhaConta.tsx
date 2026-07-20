@@ -28,7 +28,7 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
   const [historico, setHistorico] = useState<any[]>([]);
 
   // ⚠️ ATENÇÃO: Coloque o número real da Natália aqui (DDI + DDD + Número)
-  const numeroAdmin = "5561999999999"; 
+  const numeroAdmin = "5561998183567"; 
 
   useEffect(() => {
     if (user) {
