@@ -11,13 +11,22 @@ interface MinhaContaProps {
   redirectAfterLogin: () => void;
 }
 
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'https://nataliaemiliatupper.cloud';
 
 export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin }: MinhaContaProps) {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  
+
+  // 🔥 ESTADOS PARA RECUPERAÇÃO DE SENHA
+  const [modoRecuperacao, setModoRecuperacao] = useState(false);
+  const [step, setStep] = useState(1);
+  const [telefoneRecuperacao, setTelefoneRecuperacao] = useState('');
+  const [codigoRecuperacao, setCodigoRecuperacao] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [usuarioId, setUsuarioId] = useState(null);
+  const [isLoadingRecuperacao, setIsLoadingRecuperacao] = useState(false);
+
   const [formData, setFormData] = useState({
     nome: '',
     email: '',
@@ -27,42 +36,48 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
 
   const [historico, setHistorico] = useState<any[]>([]);
 
-  // ⚠️ ATENÇÃO: Coloque o número real da Natália aqui (DDI + DDD + Número)
-  const numeroAdmin = "5561998183567"; 
+  const numeroAdmin = "5561998183567";
 
   useEffect(() => {
     if (user) {
       fetch(`${API_URL}/api/clientes/${user.id}/historico`)
         .then(res => res.json())
-        .then(data => setHistorico(data || []))
-        .catch(() => toast.error("Erro ao carregar histórico."));
+        .then(data => {
+          const historicoData = Array.isArray(data) ? data : [];
+          setHistorico(historicoData);
+        })
+        .catch(() => {
+          toast.error("Erro ao carregar histórico.");
+          setHistorico([]);
+        });
     }
   }, [user]);
 
-  // =======================================================================
-  // LÓGICA DE AGRUPAMENTO
-  // =======================================================================
   const rifasAgrupadas = useMemo(() => {
     const grupos: Record<string, any> = {};
-    
+
+    if (!Array.isArray(historico) || historico.length === 0) {
+      return [];
+    }
+
     historico.forEach(item => {
       if (!grupos[item.nome_premio]) {
         grupos[item.nome_premio] = {
           nome_premio: item.nome_premio,
           imagem_url: item.imagem_url,
-          vencedor_numero: item.vencedor_numero, 
+          vencedor_numero: item.vencedor_numero,
           numeros_pagos: [],
           numeros_reservados: []
         };
       }
-      
-      if (item.status === 'Pago') {
+
+      if (item.status === 'Pago' || item.status === 'vendido') {
         grupos[item.nome_premio].numeros_pagos.push(item.numero);
       } else {
         grupos[item.nome_premio].numeros_reservados.push(item.numero);
       }
     });
-    
+
     return Object.values(grupos).map((rifa: any) => ({
       ...rifa,
       numeros_pagos: rifa.numeros_pagos.sort((a: number, b: number) => a - b),
@@ -70,16 +85,15 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
     }));
   }, [historico]);
 
-  // --- SISTEMA ANTI-BLOQUEIO DE WHATSAPP (SPINTAX) PARA O CLIENTE ---
   const handleFalarComSuporte = (nomePremio: string, tipo: 'ganhador' | 'duvida') => {
     if (!user) return;
-    
+
     const saudacoes = ["Oi Natália", "Olá Natália", "Oie Natália", "Tudo bem Natália?"];
     const saudacao = saudacoes[Math.floor(Math.random() * saudacoes.length)];
     const codigoUnico = Math.floor(Math.random() * 9999);
-    
+
     let texto = '';
-    
+
     if (tipo === 'ganhador') {
       texto = `${saudacao}, sou a ${user.nome.split(' ')[0]}! O sistema me avisou que eu GANHEI a rifa "${nomePremio}"! Vim combinar a entrega do meu prêmio! (Ref: #${codigoUnico})`;
     } else {
@@ -90,11 +104,85 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, ''); 
+    let value = e.target.value.replace(/\D/g, '');
     if (value.length > 11) value = value.slice(0, 11);
     if (value.length > 2) value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
     if (value.length > 10) value = `${value.slice(0, 10)}-${value.slice(10)}`;
     setFormData({ ...formData, telefone: value });
+  };
+
+  // 🔥 SOLICITAR CÓDIGO DE RECUPERAÇÃO
+  const solicitarCodigo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const telefoneLimpo = telefoneRecuperacao.replace(/\D/g, '');
+    
+    if (telefoneLimpo.length !== 11) {
+      toast.error('Digite um telefone válido com DDD.');
+      return;
+    }
+
+    setIsLoadingRecuperacao(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/recuperar-senha`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telefone: telefoneLimpo })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        toast.success('Código enviado para seu WhatsApp!');
+        setUsuarioId(data.usuario_id);
+        setStep(2);
+      } else {
+        toast.error(data.message || 'Erro ao enviar código.');
+      }
+    } catch (error) {
+      toast.error('Erro de conexão com o servidor.');
+    } finally {
+      setIsLoadingRecuperacao(false);
+    }
+  };
+
+  // 🔥 REDEFINIR SENHA COM O CÓDIGO
+  const redefinirSenha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (novaSenha.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setIsLoadingRecuperacao(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/redefinir-senha`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario_id: usuarioId,
+          codigo: codigoRecuperacao,
+          nova_senha: novaSenha
+        })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        toast.success('Senha redefinida com sucesso! Faça login.');
+        setModoRecuperacao(false);
+        setStep(1);
+        setTelefoneRecuperacao('');
+        setCodigoRecuperacao('');
+        setNovaSenha('');
+      } else {
+        toast.error(data.message || 'Erro ao redefinir senha.');
+      }
+    } catch (error) {
+      toast.error('Erro de conexão com o servidor.');
+    } finally {
+      setIsLoadingRecuperacao(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,15 +229,14 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
     }
   };
 
-  // =======================================================================
+  // ============================================================
   // TELA 1: USUÁRIO LOGADO
-  // =======================================================================
+  // ============================================================
   if (user) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 animate-fade-in">
         <div className="container mx-auto max-w-5xl">
           <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-gray-100">
-            {/* Header */}
             <div className="bg-gradient-to-r from-pink-600 to-purple-700 p-8 md:p-12 text-white flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
               <div className="flex items-center gap-6 relative z-10">
@@ -166,12 +253,11 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
               </Button>
             </div>
 
-            {/* Histórico */}
             <div className="p-8 md:p-12">
               <h3 className="text-2xl font-black text-gray-800 mb-8 flex items-center gap-3">
                 <Ticket className="text-pink-600 w-8 h-8" /> Minhas Participações
               </h3>
-              
+
               {rifasAgrupadas.length > 0 ? (
                 <div className="space-y-6">
                   {rifasAgrupadas.map((rifa, idx) => {
@@ -180,13 +266,11 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
 
                     return (
                       <Card key={idx} className={`overflow-hidden flex flex-col md:flex-row border-0 shadow-lg hover:shadow-xl transition-all duration-300 group ${isSorteada && !clienteGanhou ? 'opacity-80 grayscale-[20%]' : ''}`}>
-                        
-                        {/* Lado Esquerdo: Imagem */}
                         <div className="w-full md:w-56 h-56 md:h-auto bg-gray-100 relative shrink-0 overflow-hidden">
-                          <img 
-                            src={rifa.imagem_url || 'https://placehold.co/400x400/pink/white?text=Premio+Tupperware'} 
-                            alt={rifa.nome_premio} 
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
+                          <img
+                            src={rifa.imagem_url || 'https://placehold.co/400x400/pink/white?text=Premio+Tupperware'}
+                            alt={rifa.nome_premio}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                           />
                           {clienteGanhou && (
                             <div className="absolute inset-0 bg-yellow-500/40 backdrop-blur-[2px] flex items-center justify-center">
@@ -195,13 +279,10 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                           )}
                         </div>
 
-                        {/* Lado Direito: Informações */}
                         <div className="p-6 md:p-8 flex-1 flex flex-col justify-center bg-white relative">
                           <div className="flex justify-between items-start gap-4 mb-6">
                             <h4 className="text-xl md:text-2xl font-black text-gray-800 leading-tight">{rifa.nome_premio}</h4>
-                            
-                            {/* NOVO: Botão de Suporte do WhatsApp */}
-                            <button 
+                            <button
                               onClick={() => handleFalarComSuporte(rifa.nome_premio, clienteGanhou ? 'ganhador' : 'duvida')}
                               className={`shrink-0 flex items-center justify-center gap-2 p-3 rounded-xl font-bold text-sm transition-all shadow-sm ${clienteGanhou ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-200 animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700'}`}
                               title={clienteGanhou ? "Resgatar Prêmio" : "Tirar dúvida via WhatsApp"}
@@ -209,8 +290,7 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                               <MessageCircle size={20} /> <span className="hidden sm:inline">{clienteGanhou ? 'Resgatar Prêmio' : 'Suporte'}</span>
                             </button>
                           </div>
-                          
-                          {/* AVISOS DE SORTEIO */}
+
                           {clienteGanhou ? (
                             <div className="mb-6 bg-gradient-to-r from-yellow-400 to-orange-500 p-4 rounded-2xl text-white shadow-lg shadow-yellow-200">
                               <h5 className="font-black flex items-center gap-2 text-lg"><Trophy size={20} /> PARABÉNS, VOCÊ GANHOU!</h5>
@@ -227,7 +307,6 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                           ) : null}
 
                           <div className="space-y-5">
-                            {/* Números Pagos */}
                             {rifa.numeros_pagos.length > 0 && (
                               <div>
                                 <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -236,8 +315,8 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                                 <div className="flex flex-wrap gap-2">
                                   {rifa.numeros_pagos.map((n: number) => (
                                     <span key={n} className={`font-black px-4 py-2 rounded-xl text-sm border shadow-sm transition-all
-                                      ${n === rifa.vencedor_numero 
-                                        ? 'bg-yellow-400 text-yellow-900 border-yellow-500 shadow-yellow-200 ring-2 ring-yellow-400 ring-offset-2' 
+                                      ${n === rifa.vencedor_numero
+                                        ? 'bg-yellow-400 text-yellow-900 border-yellow-500 shadow-yellow-200 ring-2 ring-yellow-400 ring-offset-2'
                                         : 'bg-green-100 text-green-700 border-green-200'}`}>
                                       #{n}
                                     </span>
@@ -246,7 +325,6 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                               </div>
                             )}
 
-                            {/* Números Reservados */}
                             {rifa.numeros_reservados.length > 0 && (
                               <div className={rifa.numeros_pagos.length > 0 ? "pt-4 border-t border-gray-100" : ""}>
                                 <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -282,9 +360,131 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
     );
   }
 
-  // =======================================================================
-  // TELA 2: LOGIN / CADASTRO
-  // =======================================================================
+  // ============================================================
+  // TELA 2: LOGIN / CADASTRO / RECUPERAÇÃO DE SENHA
+  // ============================================================
+  
+  // 🔥 SE ESTIVER EM MODO DE RECUPERAÇÃO, MOSTRA O FORMULÁRIO
+  if (modoRecuperacao) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 py-12 animate-fade-in">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-gray-100 p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-8 h-8 text-pink-600" />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+              {step === 1 ? 'Recuperar Senha' : 'Redefinir Senha'}
+            </h2>
+            <p className="text-gray-500 text-sm mt-1">
+              {step === 1 
+                ? 'Digite seu WhatsApp para receber o código de verificação' 
+                : 'Digite o código recebido e sua nova senha'}
+            </p>
+          </div>
+
+          {step === 1 ? (
+            <form onSubmit={solicitarCodigo} className="space-y-5">
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">
+                  WhatsApp <span className="text-pink-500">*</span>
+                </label>
+                <div className="relative">
+                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="tel"
+                    placeholder="(00) 00000-0000"
+                    value={telefoneRecuperacao}
+                    onChange={(e) => setTelefoneRecuperacao(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-medium"
+                    required
+                  />
+                </div>
+              </div>
+
+              <Button 
+                type="submit" 
+                disabled={isLoadingRecuperacao}
+                className="w-full py-4 bg-pink-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-pink-700 transition-all flex justify-center items-center gap-2"
+              >
+                {isLoadingRecuperacao ? <Loader2 className="animate-spin" size={24} /> : 'Enviar Código'}
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => setModoRecuperacao(false)}
+                className="text-sm text-gray-500 hover:text-gray-700 w-full text-center font-medium"
+              >
+                ← Voltar ao login
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={redefinirSenha} className="space-y-5">
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">
+                  Código <span className="text-pink-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Código de 6 dígitos"
+                  value={codigoRecuperacao}
+                  onChange={(e) => setCodigoRecuperacao(e.target.value.replace(/\D/g, ''))}
+                  className="w-full p-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-bold text-center text-2xl tracking-widest"
+                  required
+                  maxLength={6}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">
+                  Nova Senha <span className="text-pink-500">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Mínimo 6 caracteres"
+                    value={novaSenha}
+                    onChange={(e) => setNovaSenha(e.target.value)}
+                    className="w-full pl-12 pr-12 py-4 bg-gray-50 text-gray-900 border-0 rounded-2xl focus:ring-2 focus:ring-pink-500 outline-none font-medium"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-pink-600"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              <Button 
+                type="submit" 
+                disabled={isLoadingRecuperacao}
+                className="w-full py-4 bg-green-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-green-700 transition-all flex justify-center items-center gap-2"
+              >
+                {isLoadingRecuperacao ? <Loader2 className="animate-spin" size={24} /> : 'Redefinir Senha'}
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="text-sm text-gray-500 hover:text-gray-700 w-full text-center font-medium"
+              >
+                ← Voltar
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // TELA DE LOGIN / CADASTRO (ORIGINAL)
+  // ============================================================
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 py-12 animate-fade-in">
       <div className="w-full max-w-5xl flex bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-gray-100">
@@ -345,7 +545,18 @@ export default function MinhaConta({ user, onLogin, onLogout, redirectAfterLogin
                 </div>
               </div>
 
-              <Button type="submit" disabled={isLoading} className="w-full py-4 mt-6 bg-gray-900 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-pink-600 transition-all flex justify-center items-center gap-2">
+              {/* 🔥 BOTÃO "ESQUECI MINHA SENHA" */}
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => setModoRecuperacao(true)}
+                  className="text-sm text-pink-500 hover:text-pink-700 font-medium transition-colors"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+
+              <Button type="submit" disabled={isLoading} className="w-full py-4 mt-2 bg-gray-900 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-pink-600 transition-all flex justify-center items-center gap-2">
                 {isLoading ? <Loader2 className="animate-spin" size={24} /> : (isLoginMode ? <><LogIn size={20}/> Entrar</> : <><UserPlus size={20}/> Cadastrar</>)}
               </Button>
             </form>

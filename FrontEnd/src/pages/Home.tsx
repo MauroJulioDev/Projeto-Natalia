@@ -10,42 +10,57 @@ export default function Home({ changePage }: HomeProps) {
   return (
     <div className="animate-fade-in flex flex-col min-h-screen bg-gray-50">
       
-      {/* --- HERO SECTION --- */}
-      <div className="relative bg-gradient-to-br from-pink-600 via-pink-700 to-purple-800 text-white py-24 lg:py-32 px-4 text-center overflow-hidden">
-        {/* Efeito de fundo sutil (opcional) */}
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-        
-        <div className="relative z-10 max-w-4xl mx-auto">
-          <div className="inline-block mb-6 px-4 py-1 rounded-full bg-white/20 backdrop-blur-sm text-sm font-semibold tracking-wide border border-white/30 text-pink-50 shadow-sm">
-            Liderança & Sucesso
-          </div>
-          
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold mb-6 tracking-tight drop-shadow-md">
-            Sua Jornada de <span className="text-pink-200">Sucesso</span>
-          </h1>
-          
-          <p className="text-lg md:text-2xl mb-10 max-w-2xl mx-auto text-pink-100 font-light leading-relaxed">
-            Como Mentora Tupperware, guio você passo a passo rumo à independência financeira e realização pessoal.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row justify-center gap-4 px-4">
-            <Button 
-              variant="secondary" 
-              className="bg-white text-pink-700 hover:bg-pink-50 border-transparent font-bold py-4 px-8 rounded-full shadow-lg transform transition hover:-translate-y-1"
-              onClick={() => changePage('cadastro')}
-            >
-              Quero ser Consultora
-            </Button>
-            <Button 
-              variant="outline" 
-              className="bg-transparent text-white border-2 border-white hover:bg-white hover:text-pink-700 font-bold py-4 px-8 rounded-full shadow-lg transform transition hover:-translate-y-1"
-              onClick={() => changePage('rifas')}
-            >
-              Ver Sorteios Disponíveis
-            </Button>
-          </div>
+	{/* --- HERO SECTION --- */}
+    <div className="relative bg-gradient-to-br from-pink-600 via-pink-700 to-purple-800 text-white py-12 md:py-16 px-4 overflow-hidden">
+    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+
+    <div className="relative z-10 max-w-6xl mx-auto w-full flex flex-col md:flex-row items-center gap-8 md:gap-12">
+    
+    {/* 🖼️ IMAGEM COM FADE NAS BORDAS */}
+      <div className="md:w-2/5 lg:w-1/3 flex-shrink-0 relative -mt-6">
+        <div className="relative w-full aspect-[3/4]">
+          <img 
+            src="/natalia.jpeg" 
+            alt="Natália - Mentora Tupperware" 
+            className="w-full h-full object-cover object-[50%_110%] border-none background-none"
+          />
+          {/* Máscara com gradiente para suavizar as bordas */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-transparent pointer-events-none"></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-purple-900/20 pointer-events-none"></div>
         </div>
       </div>
+
+    {/* 📝 TEXTO (DIREITA) */}
+    <div className="flex-1 flex flex-col justify-center p-8 md:p-12 lg:p-16 text-center md:text-left">
+      <div className="inline-block mb-4 px-4 py-1 rounded-full bg-white/20 backdrop-blur-sm text-sm font-semibold tracking-wide border border-white/30 text-pink-50 shadow-sm self-center md:self-start">
+        Liderança & Sucesso
+      </div>
+
+      <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold mb-4 tracking-tight drop-shadow-md">
+        Sua Jornada de <span className="text-pink-200">Sucesso</span>
+      </h1>
+
+      <p className="text-base md:text-lg mb-6 max-w-2xl text-pink-100 font-light leading-relaxed">
+        Como Mentora Tupperware, guio você passo a passo rumo à independência financeira e realização pessoal.
+      </p>
+
+      <div className="flex flex-col sm:flex-row justify-center md:justify-start gap-4">
+        <button
+          onClick={() => changePage('cadastro')}
+          className="bg-white text-pink-700 hover:bg-pink-50 font-bold py-3 px-6 rounded-full shadow-lg transform transition hover:-translate-y-1"
+        >
+          Quero ser Consultora
+        </button>
+        <button
+          onClick={() => changePage('rifas')}
+          className="bg-transparent text-white border-2 border-white hover:bg-white hover:text-pink-700 font-bold py-3 px-6 rounded-full shadow-lg transform transition hover:-translate-y-1"
+        >
+          Ver Sorteios
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
       {/* --- CARDS SECTION --- */}
       <div className="container mx-auto px-4 -mt-20 relative z-20 pb-16">

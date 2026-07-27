@@ -1,56 +1,68 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
-// Inicia o cliente do WhatsApp (LocalAuth salva a sessão para não precisar ler o QR Code toda hora)
+console.log('🔄 Iniciando cliente WhatsApp...');
+
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Necessário para evitar erros em algumas hospedagens
+        executablePath: '/root/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome',
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer'
+        ],
+		protocolTimeout: 60000 // 60 segundos
     }
 });
 
-// Quando precisar conectar, ele gera um QR Code no terminal do VS Code
 client.on('qr', (qr) => {
-    console.log('📱 ATENÇÃO: Escaneie o QR Code abaixo com o WhatsApp (Aparelho da Natália):');
+    console.log('📱 QR CODE PARA ESCANEAR:');
     qrcode.generate(qr, { small: true });
 });
 
-// Avisa quando o WhatsApp estiver logado e pronto para disparar
 client.on('ready', () => {
-    console.log('✅ Robô do WhatsApp conectado e pronto para enviar mensagens!');
+    console.log('✅ WhatsApp conectado com sucesso!');
 });
 
-// Liga o motor do WhatsApp
+client.on('auth_failure', (msg) => {
+    console.error('❌ Falha na autenticação:', msg);
+});
+
+client.on('disconnected', (reason) => {
+    console.log('⚠️ WhatsApp desconectado:', reason);
+});
+
 client.initialize();
 
-// Função que vamos exportar para usar no server.js
 const enviarMensagemZap = async (telefone, mensagem) => {
     try {
-        // 👇 ESCUDO DE SEGURANÇA: Se não tiver telefone, o robô cancela o envio em silêncio
         if (!telefone) {
-            console.log("⚠️ Aviso: Tentativa de envio de WhatsApp sem número de telefone.");
-            return;
+            console.log("⚠️ Aviso: Tentativa de envio sem número.");
+            return false;
         }
 
         let numeroLimpo = telefone.replace(/\D/g, '');
-        
         if (!numeroLimpo.startsWith('55')) {
             numeroLimpo = `55${numeroLimpo}`;
         }
-        
-        // A MÁGICA AQUI: Pede pro WhatsApp verificar se o número existe e qual o ID correto (com ou sem o 9)
+
         const contatoVerificado = await client.getNumberId(numeroLimpo);
-        
+
         if (contatoVerificado) {
-            // Se o WhatsApp achou a pessoa, manda a mensagem pro ID oficial que ele devolveu
             await client.sendMessage(contatoVerificado._serialized, mensagem);
-            console.log(`📩 Zap enviado com sucesso para ${numeroLimpo}`);
+            console.log(`✅ Mensagem enviada para ${telefone}`);
+            return true;
         } else {
-            console.log(`⚠️ Aviso: O número ${telefone} não possui WhatsApp registrado.`);
+            console.log(`❌ Número não encontrado: ${telefone}`);
+            return false;
         }
-        
     } catch (error) {
-        console.error(`❌ Erro ao enviar Zap para ${telefone}:`, error.message);
+        console.error('❌ Erro ao enviar mensagem:', error);
+        return false;
     }
 };
 

@@ -10,7 +10,7 @@ export default function CriarRifa() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://localhost:3001/api/rifas', {
+      const response = await fetch('http://179.197.236.219/api/rifas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

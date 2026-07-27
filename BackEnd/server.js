@@ -4,17 +4,14 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { MercadoPagoConfig, Preference } = require('mercadopago');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+
 const SECRET_KEY = process.env.JWT_SECRET;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- CONFIGURAÇÃO MERCADO PAGO ---
-const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN });
-
-app.use(cors()); 
+app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
@@ -36,13 +33,13 @@ const verifyToken = (req, res, next) => {
 // 2. CONEXÃO COM BANCO DE DADOS
 // ==========================================
 const db = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '10140131', 
-  database: process.env.DB_NAME || 'tupperware_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '10140131',
+    database: process.env.DB_NAME || 'tupperware_db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
 db.getConnection((err) => {
@@ -66,19 +63,21 @@ app.post('/api/auth/admin-login', (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
-    const { nome, email, telefone, senha, foto_perfil } = req.body;
-    if (!nome || !telefone || !senha) return res.status(400).send({ message: "Preencha nome, telefone e senha." });
-    
+    const { nome, email, telefone, senha } = req.body;
+    if (!nome || !telefone || !senha) {
+        return res.status(400).send({ message: "Preencha nome, telefone e senha." });
+    }
+
     try {
         db.query("SELECT * FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
             if (err) return res.status(500).send({ message: "Erro no banco." });
             if (results.length > 0) return res.status(409).send({ message: "Este WhatsApp já está cadastrado!" });
-            
+
             const salt = await bcrypt.genSalt(10);
             const senhaHash = await bcrypt.hash(senha, salt);
 
-            const sql = "INSERT INTO clientes (nome, email, telefone, senha, foto_perfil) VALUES (?, ?, ?, ?, ?)";
-            db.query(sql, [nome, email || '', telefone, senhaHash, foto_perfil || ''], (err, result) => {
+            const sql = "INSERT INTO clientes (nome, email, telefone, senha) VALUES (?, ?, ?, ?)";
+            db.query(sql, [nome, email || '', telefone, senhaHash], (err, result) => {
                 if (err) return res.status(500).json({ message: "Erro ao cadastrar." });
                 res.status(201).json({ id: result.insertId, message: "Usuário criado!" });
             });
@@ -98,17 +97,17 @@ app.post('/api/auth/login', (req, res) => {
         if (!senhaValida) return res.status(401).json({ message: "Senha incorreta." });
 
         const token = jwt.sign({ id: user.id, telefone: user.telefone }, SECRET_KEY, { expiresIn: '2h' });
-        res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, foto_perfil: user.foto_perfil, telefone: user.telefone } });
+        res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, telefone: user.telefone } });
     });
 });
 
 app.get('/api/clientes/:id/historico', (req, res) => {
     const clienteId = req.params.id;
     const sql = `
-        SELECT rn.numero, rn.status, r.nome_premio, r.imagem_url, r.vencedor_numero 
-        FROM rifa_numeros rn 
-        JOIN rifas r ON rn.rifa_id = r.id 
-        WHERE rn.cliente_id = ? 
+        SELECT rn.numero, rn.status, r.nome_premio, r.imagem_url, r.vencedor_numero
+        FROM rifa_numeros rn
+        JOIN rifas r ON rn.rifa_id = r.id
+        WHERE rn.cliente_id = ?
         ORDER BY rn.id DESC
     `;
     db.query(sql, [clienteId], (err, results) => {
@@ -118,44 +117,60 @@ app.get('/api/clientes/:id/historico', (req, res) => {
 });
 
 // ==========================================
-// 4. ROTAS DO PAINEL ADMIN
+// 4. ROTAS ADMIN
 // ==========================================
 app.post('/api/consultoras', (req, res) => {
-  let { nome, email, telefone, cidade } = req.body;
-  const tel = telefone.replace(/\D/g, '');
-  if (!nome || tel.length !== 11) return res.status(400).send({ message: "Dados inválidos." });
-  const telFmt = `(${tel.slice(0,2)})${tel.slice(2,7)}-${tel.slice(7)}`;
-  db.query("SELECT * FROM consultoras WHERE email = ? OR telefone = ?", [email, telFmt], (err, results) => {
-    if (results && results.length > 0) return res.status(409).send({ message: "Duplicado." });
-    db.query("INSERT INTO consultoras (nome, email, telefone, cidade) VALUES (?, ?, ?, ?)", [nome, email, telFmt, cidade], (err, result) => {
-        if(err) return res.status(500).send({message: "Erro."});
-        res.status(201).send({ message: "Sucesso!", id: result.insertId });
+    let { nome, email, telefone, cidade } = req.body;
+    const tel = telefone.replace(/\D/g, '');
+    if (!nome || tel.length !== 11) return res.status(400).send({ message: "Dados inválidos." });
+    const telFmt = `(${tel.slice(0,2)})${tel.slice(2,7)}-${tel.slice(7)}`;
+    db.query("SELECT * FROM consultoras WHERE email = ? OR telefone = ?", [email, telFmt], (err, results) => {
+        if (results && results.length > 0) return res.status(409).send({ message: "Duplicado." });
+        db.query("INSERT INTO consultoras (nome, email, telefone, cidade) VALUES (?, ?, ?, ?)", [nome, email, telFmt, cidade], (err, result) => {
+            if(err) return res.status(500).send({message: "Erro."});
+            res.status(201).send({ message: "Sucesso!", id: result.insertId });
+        });
     });
-  });
 });
 
-app.get('/api/consultoras', (req, res) => { 
-    db.query("SELECT * FROM consultoras ORDER BY id DESC", (e,r)=>res.json(r||[])); 
+app.get('/api/consultoras', (req, res) => {
+    db.query("SELECT * FROM consultoras ORDER BY id DESC", (e,r)=>res.json(r||[]));
 });
 
 app.post('/api/mentoria', (req, res) => {
-  const { nome, telefone, nivel, dificuldade } = req.body;
-  db.query("INSERT INTO mentoria_leads (nome, telefone, nivel, dificuldade) VALUES (?, ?, ?, ?)", [nome, telefone, nivel, dificuldade], (e)=> {
-      if(e) return res.status(500).send({message: "Erro"}); res.status(201).send({ message: "Sucesso!" });
-  });
+    const { nome, telefone, nivel, dificuldade } = req.body;
+    db.query("INSERT INTO mentoria_leads (nome, telefone, nivel, dificuldade) VALUES (?, ?, ?, ?)", [nome, telefone, nivel, dificuldade], (e)=> {
+        if(e) return res.status(500).send({message: "Erro"}); res.status(201).send({ message: "Sucesso!" });
+    });
 });
 
-app.get('/api/mentoria', (req, res) => { 
-    db.query("SELECT * FROM mentoria_leads ORDER BY id DESC", (e,r)=>res.json(r||[])); 
+app.get('/api/mentoria', (req, res) => {
+    db.query("SELECT * FROM mentoria_leads ORDER BY id DESC", (e,r)=>res.json(r||[]));
 });
 
 // ==========================================
-// 5. ROTAS DE GERENCIAMENTO DE RIFAS
+// 5. ROTAS DE RIFAS
 // ==========================================
 app.get('/api/rifas', (req, res) => {
-    db.query("SELECT * FROM rifas", (err, result) => {
-        if (err) return res.status(500).json(err);
-        res.json(result);
+    const query = `
+        SELECT 
+            r.*,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM rifa_numeros rn 
+                WHERE rn.rifa_id = r.id 
+                AND rn.status = 'Pago'
+            ), 0) AS numeros_vendidos
+        FROM rifas r
+        ORDER BY r.id DESC
+    `;
+    
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Erro ao buscar rifas:', err);
+            return res.status(500).json({ message: 'Erro ao buscar rifas' });
+        }
+        res.json(results);
     });
 });
 
@@ -171,11 +186,11 @@ app.get('/api/rifas/:id/numeros', (req, res) => {
     db.query("SELECT numero, status, comprador_nome FROM rifa_numeros WHERE rifa_id = ?", [req.params.id], (err, result) => res.json(result || []));
 });
 
-// ROTA NOVO: Buscar o Ranking (Top 3) de uma rifa
 app.get('/api/rifas/:id/ranking', (req, res) => {
     const rifaId = req.params.id;
     const sql = `
-        SELECT comprador_nome, comprador_telefone, COUNT(numero) as total_numeros        FROM rifa_numeros
+        SELECT comprador_nome, comprador_telefone, COUNT(numero) as total_numeros
+        FROM rifa_numeros
         WHERE rifa_id = ? AND status = 'Pago'
         GROUP BY comprador_telefone, comprador_nome
         ORDER BY total_numeros DESC
@@ -189,10 +204,43 @@ app.get('/api/rifas/:id/ranking', (req, res) => {
 
 app.post('/api/rifas', verifyToken, (req, res) => {
     const { nome_premio, valor_numero, total_numeros, imagem_url } = req.body;
-    db.query('INSERT INTO rifas (nome_premio, total_numeros, valor_numero, imagem_url) VALUES (?, ?, ?, ?)', [nome_premio, total_numeros, valor_numero, imagem_url], (err, result) => {
-        if (err) return res.status(500).json({ error: 'Erro no banco' });
-        res.status(201).json({ message: 'Rifa cadastrada!', id: result.insertId });
-    });
+    
+    console.log('📦 Dados recebidos:', { nome_premio, valor_numero, total_numeros, imagem_url: imagem_url ? 'OK' : 'vazio' });
+    
+    // 🔥 VALIDAÇÃO
+    if (!nome_premio || !valor_numero || !total_numeros) {
+        return res.status(400).json({ 
+            error: 'Nome, valor e total de números são obrigatórios',
+            code: 'MISSING_FIELDS'
+        });
+    }
+    
+    const total = Number(valor_numero) * Number(total_numeros);
+    if (total <= 1) {
+        return res.status(400).json({ 
+            error: 'O valor total da rifa (valor do número × total de números) deve ser maior que R$ 1,00',
+            code: 'TOTAL_TOO_LOW'
+        });
+    }
+    
+    db.query(
+        'INSERT INTO rifas (nome_premio, total_numeros, valor_numero, imagem_url) VALUES (?, ?, ?, ?)',
+        [nome_premio, total_numeros, valor_numero, imagem_url || ''],
+        (err, result) => {
+            if (err) {
+                console.error('❌ Erro ao criar rifa:', err);
+                return res.status(500).json({ 
+                    error: 'Erro no banco de dados: ' + err.message,
+                    code: 'DB_ERROR'
+                });
+            }
+            res.status(201).json({ 
+                message: 'Rifa cadastrada!', 
+                id: result.insertId,
+                code: 'SUCCESS'
+            });
+        }
+    );
 });
 
 app.put('/api/rifas/:id', verifyToken, (req, res) => {
@@ -227,16 +275,12 @@ app.post('/api/rifas/:id/sortear', verifyToken, (req, res) => {
     });
 });
 
-// ==========================================
-// ROTA NOVO: Ranking Global do Mês Atual
-// ==========================================
 app.get('/api/ranking-global', (req, res) => {
-    // Busca os clientes que mais compraram números pagos no mês atual
     const sql = `
         SELECT comprador_nome, COUNT(numero) as total_numeros
         FROM rifa_numeros
-        WHERE status = 'Pago' 
-          AND MONTH(data_reserva) = MONTH(CURRENT_DATE()) 
+        WHERE status = 'Pago'
+          AND MONTH(data_reserva) = MONTH(CURRENT_DATE())
           AND YEAR(data_reserva) = YEAR(CURRENT_DATE())
         GROUP BY comprador_telefone, comprador_nome
         ORDER BY total_numeros DESC
@@ -248,159 +292,503 @@ app.get('/api/ranking-global', (req, res) => {
     });
 });
 
+// ROTA DE PAGAMENTO - MERCADO PAGO (PIX DIRETO)
 // ==========================================
-// 6. ROTAS DE PAGAMENTO E CHECKOUT (MISSÕES 10 E 11)
-// ==========================================
+const crypto = require('crypto');
+
 app.post('/api/rifas/:id/pagar', async (req, res) => {
     const rifaId = req.params.id;
-    const { numeros, nome, telefone, valorUnitario, tituloRifa, clienteId } = req.body;
+    const { numeros, nome, telefone, email, valorUnitario, tituloRifa, clienteId } = req.body;
 
-    if (!numeros || !numeros.length) return res.status(400).send({ message: "Sem números." });
+    if (!numeros || !numeros.length) {
+        return res.status(400).send({ message: "Selecione pelo menos um número." });
+    }
+
     limparReservasExpiradas();
 
     const placeholders = numeros.map(() => '?').join(',');
-    db.query(`SELECT * FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders})`, [rifaId, ...numeros], async (err, results) => {
-        if (results && results.length > 0) return res.status(409).send({ message: "Números indisponíveis." });
+    const queryVerifica = `SELECT numero FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders}) AND LOWER(status) IN ('vendido', 'reservado', 'pago')`;
+
+    db.query(queryVerifica, [rifaId, ...numeros], async (err, results) => {
+        if (err) {
+            console.error('Erro ao verificar números:', err);
+            return res.status(500).send({ message: "Erro ao verificar disponibilidade." });
+        }
+
+        if (results && results.length > 0) {
+            const numerosIndisponiveis = results.map(r => r.numero);
+            return res.status(409).send({
+                message: `Números indisponíveis: ${numerosIndisponiveis.join(', ')}.`
+            });
+        }
 
         try {
-            const total = Number(valorUnitario) * numeros.length;
-            const preference = new Preference(client);
-            
-            const preferenceData = {
-                body: {
-                    items: [{ title: `${tituloRifa}`, quantity: 1, unit_price: total, currency_id: 'BRL' }],
-                    payer: { name: nome || 'Cliente', email: 'cliente_teste@user.com' },
-                    back_urls: { success: 'http://localhost:5173', failure: 'http://localhost:5173', pending: 'http://localhost:5173' },
-                    external_reference: `RIFA:${rifaId}|NUMEROS:${numeros.join(',')}`,
-                    notification_url: "https://SEU-DOMINIO-AQUI.com.br/api/webhook/mercadopago"
+            // 🔥 BUSCA O VALOR DO NÚMERO DIRETAMENTE DO BANCO
+            db.query("SELECT valor_numero FROM rifas WHERE id = ?", [rifaId], async (err, resultsRifa) => {
+                if (err || resultsRifa.length === 0) {
+                    console.error('Erro ao buscar valor da rifa:', err);
+                    return res.status(500).send({ message: "Erro ao buscar valor da rifa." });
                 }
-            };
 
-            const prefResponse = await preference.create(preferenceData);
-            const values = numeros.map(num => [rifaId, num, clienteId || null, nome, telefone, 'Reservado', prefResponse.id]);
-            
-            db.query("INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?", [values], (dbErr) => {
-                if (dbErr) return res.status(500).send({ message: "Erro no banco." });
-                
-                // 1. Libera o site para o cliente pagar
-                res.json({ link_pagamento: prefResponse.init_point });
+                const valorUnitarioDB = Number(resultsRifa[0].valor_numero);
+                const total = valorUnitarioDB * numeros.length;
 
-                // 2. Envia o Zap Imediato de Cobrança
-                const msgCobranca = `*Mentora Tupperware* 🎁\n\nOlá, ${nome}! Sua reserva na rifa *${tituloRifa}* foi recebida!\n\n🎟️ *Números:* ${numeros.join(', ')}\n💰 *Total:* R$ ${total.toFixed(2)}\n\n⚠️ Você tem 15 minutos para pagar. Link:\n${prefResponse.init_point}\n\nBoa sorte! 🍀`;
-                enviarMensagemZap(telefone, msgCobranca);
+                // 🔥 GERA IDEMPOTENCY KEY ÚNICO
+                const idempotencyKey = crypto.randomBytes(16).toString('hex');
 
-                // --- 🤖 ROBÔ DE CARRINHO ABANDONADO (MISSÃO 11) ---
-                // Espera 10 minutos (600.000 ms)
-                setTimeout(() => {
-                    db.query("SELECT status FROM rifa_numeros WHERE id_pagamento_externo = ?", [prefResponse.id], (errTimer, resultsTimer) => {
-                        if (resultsTimer && resultsTimer.length > 0) {
-                            const aindaPendente = resultsTimer.some(r => r.status !== 'Pago');
-                            if (aindaPendente && telefone) {
-                                const msgRecuperacao = `⚠️ *SEU PIX VAI EXPIRAR!* ⚠️\n\nOlá, ${nome}! Notamos que você reservou números, mas o pagamento não foi concluído.\n\nCorre lá e finaliza o PIX antes que seus números sejam liberados. 🏃‍♀️💨\n\n🔗 *Link de Pagamento:* ${prefResponse.init_point}`;
-                                enviarMensagemZap(telefone, msgRecuperacao);
-                            }
+                // 🔥 CRIA O PAGAMENTO NO MERCADO PAGO
+                const paymentData = {
+                    transaction_amount: total,
+                    description: `${tituloRifa} - ${numeros.length} números`,
+                    payment_method_id: 'pix',
+                    payer: {
+                        email: email || 'cliente@email.com',
+                        first_name: nome || 'Cliente',
+                        phone: {
+                            number: telefone || '11999999999'
                         }
-                    });
-                }, 600000);
+                    },
+                    notification_url: 'https://nataliaemiliatupper.cloud/api/webhook/mercadopago'
+                };
 
+                console.log('🟡 Enviando para Mercado Pago:', JSON.stringify(paymentData, null, 2));
+
+                const response = await fetch('https://api.mercadopago.com/v1/payments', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json',
+                        'X-Idempotency-Key': idempotencyKey
+                    },
+                    body: JSON.stringify(paymentData)
+                });
+
+                const payment = await response.json();
+                console.log('🟡 Resposta Mercado Pago:', JSON.stringify(payment, null, 2));
+
+                if (payment.status !== 'pending' && payment.status !== 'in_process') {
+                    console.error('❌ Erro ao criar pagamento:', payment);
+                    return res.status(500).send({ message: "Erro ao gerar pagamento." });
+                }
+
+                // 🔥 SALVA OS NÚMEROS COMO RESERVADOS
+                const values = numeros.map(num => [rifaId, num, clienteId || null, nome, telefone, 'Reservado', payment.id]);
+
+                db.query(
+                    "INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?",
+                    [values],
+                    (dbErr) => {
+                        if (dbErr) {
+                            console.error('Erro ao inserir reserva:', dbErr);
+                            return res.status(500).send({ message: "Erro ao reservar números." });
+                        }
+
+                        // 🔥 EXTRAI OS DADOS DO PIX
+                        const pixData = payment.point_of_interaction?.transaction_data || {};
+                        const qrCodeBase64 = pixData.qr_code_base64 || null;
+                        const qrCodeText = pixData.qr_code || null;
+
+                        console.log('🟡 QR Code Base64:', qrCodeBase64 ? 'OK (presente)' : 'NULO');
+                        console.log('🟡 QR Code Texto:', qrCodeText ? 'OK (presente)' : 'NULO');
+
+                        // 🔥 RETORNA OS DADOS DO PIX
+                        res.json({
+                            success: true,
+                            pix: {
+                                qrCode: qrCodeBase64,
+                                copiaCola: qrCodeText,
+                                valor: total,
+                                id: payment.id
+                            }
+                        });
+
+                        // 🔥 ENVIA MENSAGEM DE COBRANÇA
+                        const msgCobranca = `*Mentora Tupperware* 🎁\n\nOlá, ${nome}! Sua reserva na rifa *${tituloRifa}* foi recebida!\n\n🎟️ *Números:* ${numeros.join(', ')}\n💰 *Total:* R$ ${total.toFixed(2)}\n\n📱 Escaneie o QR Code no site ou use o código copia e cola.\n\n⚠️ Você tem 15 minutos para pagar.\n\nBoa sorte! 🍀`;
+                        enviarMensagemZap(telefone, msgCobranca);
+                    }
+                );
             });
 
-        } catch (mpError) { 
-            res.status(500).send({ message: "Erro no Mercado Pago." }); 
+        } catch (error) {
+            console.error('❌ Erro no checkout Mercado Pago:', error);
+            res.status(500).send({ message: "Erro ao gerar pagamento." });
         }
     });
 });
-
-// WEBHOOK DO MERCADO PAGO (MISSÃO 10 - Zap de Pós Venda)
+	// ==========================================
+// WEBHOOK DO MERCADO PAGO
+// ==========================================
 app.post('/api/webhook/mercadopago', async (req, res) => {
     res.sendStatus(200);
 
     try {
         const { type, data } = req.body;
+        console.log('📩 Webhook recebido:', JSON.stringify(req.body, null, 2));
+
         if (type === 'payment') {
-            const response = await fetch(`https://api.mercadopago.com/v1/payments/${data.id}`, {
-                headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` }
+            const paymentId = data.id;
+            
+            // 🔥 CONSULTA O PAGAMENTO NO MERCADO PAGO
+            const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.MP_ACCESS_TOKEN}`
+                }
             });
-            const paymentInfo = await response.json();
+            const payment = await response.json();
 
-            if (paymentInfo.status === 'approved') {
-                const externalRef = paymentInfo.external_reference; 
-                
-                if (externalRef && externalRef.startsWith('RIFA:')) {
-                    const partes = externalRef.split('|');
-                    const rifaId = partes[0].split(':')[1];
-                    const numerosString = partes[1].split(':')[1]; 
-                    const numerosArray = numerosString.split(',').map(n => Number(n));
-                    const placeholders = numerosArray.map(() => '?').join(',');
+            if (payment.status === 'approved') {
+                console.log(`✅ Pagamento aprovado: ${paymentId}`);
 
-                    // 1. Busca os dados do comprador no banco ANTES de atualizar
-                    db.query(`SELECT comprador_nome, comprador_telefone FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders}) LIMIT 1`, [rifaId, ...numerosArray], (errBusca, resultsBusca) => {
-                        
-                        let zapComprador = null;
-                        let nomeComprador = 'Cliente';
-                        
-                        if (resultsBusca && resultsBusca.length > 0) {
-                            zapComprador = resultsBusca[0].comprador_telefone;
-                            nomeComprador = resultsBusca[0].comprador_nome;
+                // 🔥 BUSCA OS NÚMEROS RESERVADOS
+                db.query(
+                    "SELECT rifa_id, numero, comprador_nome, comprador_telefone FROM rifa_numeros WHERE id_pagamento_externo = ?",
+                    [paymentId],
+                    (errBusca, resultsBusca) => {
+                        if (errBusca || resultsBusca.length === 0) {
+                            console.error('❌ Números não encontrados para o pagamento:', paymentId);
+                            return;
                         }
 
-                        // 2. Atualiza para 'Pago'
+                        const rifaId = resultsBusca[0].rifa_id;
+                        const numerosArray = resultsBusca.map(r => r.numero);
+                        const nomeComprador = resultsBusca[0].comprador_nome || 'Cliente';
+                        const telefoneComprador = resultsBusca[0].comprador_telefone;
+
+                        const placeholders = numerosArray.map(() => '?').join(',');
                         const sqlUpdate = `UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`;
+
                         db.query(sqlUpdate, [rifaId, ...numerosArray], (errUpdate) => {
-                            if (!errUpdate) {
-                                db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numerosArray.length, rifaId]);
-                                console.log(`✅ Pagamento Aprovado (Webhook)! Rifa ${rifaId}`);
-                                
-                                // --- 🤖 ZAP DE PÓS-VENDA (CLIENTE REAL) ---
-                                if (zapComprador && zapComprador !== '00000000000') {
-                                    const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nomeComprador}! Confirmamos o seu pagamento. Seus números da sorte estão garantidos! 🍀\n\nAcompanhe o sorteio na aba "Minha Conta" do nosso site. Boa sorte!`;
-                                    enviarMensagemZap(zapComprador, msgSucesso);
+                            if (errUpdate) {
+                                console.error('❌ Erro ao atualizar status:', errUpdate);
+                                return;
+                            }
+
+                            // 🔥 ATUALIZA A CONTAGEM DE VENDAS
+                            db.query(
+                                `UPDATE rifas SET numeros_vendidos = (
+                                    SELECT COUNT(*) FROM rifa_numeros WHERE rifa_id = ? AND status = 'Pago'
+                                ) WHERE id = ?`,
+                                [rifaId, rifaId],
+                                (errVendas) => {
+                                    if (errVendas) {
+                                        console.error('❌ Erro ao atualizar vendas:', errVendas);
+                                    }
+                                    console.log(`✅ Pagamento aprovado! Rifa ${rifaId}, Números: ${numerosArray.join(', ')}`);
                                 }
+                            );
+
+                            // 🔥 ENVIA MENSAGEM DE CONFIRMAÇÃO
+                            if (telefoneComprador) {
+                                const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nomeComprador}! Confirmamos o seu pagamento. Seus números da sorte estão garantidos! 🍀\n\nAcompanhe o sorteio na aba 'Minha Conta' do nosso site. Boa sorte!`;
+                                enviarMensagemZap(telefoneComprador, msgSucesso);
                             }
                         });
-                    });
-                }
+                    }
+                );
+            } else {
+                console.warn(`⚠️ Pagamento NÃO aprovado: ${paymentId} - Status: ${payment.status}`);
             }
         }
     } catch (error) {
-        console.error("Erro no Webhook:", error);
+        console.error('❌ Erro no webhook:', error);
     }
 });
 
-// SIMULAÇÃO DE PAGAMENTO (TESTES)
+// 🔥 FUNÇÃO PARA PROCESSAR OS NÚMEROS PAGOS
+function processarNumerosPagos(rifaId, resultados, orderNsu) {
+    // 🔥 EXTRAI TODOS OS NÚMEROS
+    const numerosArray = resultados.map(r => r.numero);
+    const nomeComprador = resultados[0].comprador_nome || 'Cliente';
+    const telefoneComprador = resultados[0].comprador_telefone;
+
+    console.log(`🟡 Processando ${numerosArray.length} números: ${numerosArray.join(', ')} para rifa ${rifaId}`);
+
+    if (numerosArray.length === 0) {
+        console.warn('⚠️ Nenhum número para processar');
+        return;
+    }
+
+    const placeholders = numerosArray.map(() => '?').join(',');
+    const sqlUpdate = `UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`;
+
+    db.query(sqlUpdate, [rifaId, ...numerosArray], (errUpdate) => {
+        if (errUpdate) {
+            console.error('❌ Erro ao atualizar status:', errUpdate);
+            return;
+        }
+
+        // 🔥 RECALCULA O NUMEROS_VENDIDOS
+        db.query(
+            `UPDATE rifas 
+             SET numeros_vendidos = (
+                 SELECT COUNT(*) 
+                 FROM rifa_numeros 
+                 WHERE rifa_id = ? AND status = 'Pago'
+             )
+             WHERE id = ?`,
+            [rifaId, rifaId],
+            (errVendas) => {
+                if (errVendas) {
+                    console.error('❌ Erro ao atualizar vendas:', errVendas);
+                } else {
+                    console.log(`✅ Contagem de vendas atualizada para rifa ${rifaId}`);
+                }
+            }
+        );
+
+        console.log(`✅ Pagamento aprovado! Rifa ${rifaId}, Números: ${numerosArray.join(', ')}`);
+
+        if (telefoneComprador) {
+            const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nomeComprador}! Confirmamos o seu pagamento. Seus números da sorte estão garantidos! 🍀\n\nAcompanhe o sorteio na aba 'Minha Conta' do nosso site. Boa sorte!`;
+            enviarMensagemZap(telefoneComprador, msgSucesso);
+        }
+    });
+}
+
+// 🔥 FUNÇÃO PARA PROCESSAR O PAGAMENTO
+async function processarPagamento(orderNsu, webhookData) {
+    const parts = orderNsu.split('-');
+    const rifaId = parts[1];
+    
+    // 🔥 EXTRAI OS NÚMEROS DOS ITENS
+    let numerosArray = [];
+    if (webhookData.items && webhookData.items.length > 0) {
+        numerosArray = webhookData.items.map(item => item.quantity || 1);
+    }
+    
+    if (!rifaId || numerosArray.length === 0) {
+        console.warn('⚠️ Não foi possível extrair rifaId ou numeros do webhook');
+        return;
+    }
+
+    const placeholders = numerosArray.map(() => '?').join(',');
+
+    db.query(`SELECT comprador_nome, comprador_telefone FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders}) LIMIT 1`, [rifaId, ...numerosArray], (errBusca, resultsBusca) => {
+        let zapComprador = null;
+        let nomeComprador = 'Cliente';
+
+        if (resultsBusca && resultsBusca.length > 0) {
+            zapComprador = resultsBusca[0].comprador_telefone;
+            nomeComprador = resultsBusca[0].comprador_nome;
+        }
+
+        const sqlUpdate = `UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`;
+        db.query(sqlUpdate, [rifaId, ...numerosArray], (errUpdate) => {
+            if (!errUpdate) {
+                db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numerosArray.length, rifaId]);
+                console.log(`✅ Pagamento aprovado! Rifa ${rifaId}, Números: ${numerosArray.join(', ')}`);
+
+                if (zapComprador) {
+                    const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nomeComprador}! Confirmamos o seu pagamento. Seus números da sorte estão garantidos! 🍀\n\nAcompanhe o sorteio na aba 'Minha Conta' do nosso site. Boa sorte!`;
+                    enviarMensagemZap(zapComprador, msgSucesso);
+                }
+            } else {
+                console.error('❌ Erro ao atualizar status:', errUpdate);
+            }
+        });
+    });
+}
+
+// ==========================================
+// 8. SIMULAÇÃO DE PAGAMENTO (TESTES)
+// ==========================================
 app.post('/api/simular-pagamento', (req, res) => {
     const { rifaId, numeros, clienteId, nome, telefone } = req.body;
     const placeholders = numeros.map(() => '?').join(',');
-    
+
     db.query(`DELETE FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders})`, [rifaId, ...numeros], () => {
         const values = numeros.map(num => [rifaId, num, clienteId, nome || 'Teste', telefone || '00000000000', 'Pago', `simulacao_${Date.now()}`]);
-        
+
         db.query("INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?", [values], (err) => {
-            if(err) return res.status(500).send(err); 
-            
+            if(err) return res.status(500).send(err);
+
             db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numeros.length, rifaId], () => {
-                
-                // MENSAGEM PÓS-VENDA DA SIMULAÇÃO
                 if (telefone && telefone !== '00000000000') {
                     const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nome}! Confirmamos o seu pagamento (Simulação). Seus números da sorte estão garantidos! 🍀`;
                     enviarMensagemZap(telefone, msgSucesso);
                 }
 
-                // ALERTA DE RIFA LOTADA (ADMIN)
                 db.query("SELECT nome_premio, total_numeros, numeros_vendidos FROM rifas WHERE id = ?", [rifaId], (errRifa, resultsRifa) => {
                     if (resultsRifa && resultsRifa.length > 0) {
                         const rifa = resultsRifa[0];
                         if (rifa.numeros_vendidos >= rifa.total_numeros) {
                             const adminZap = process.env.ADMIN_WHATSAPP;
-                            if (adminZap) enviarMensagemZap(adminZap, `🚨 *ALERTA DE RIFA LOTADA!* 🚨\n\nA rifa *"${rifa.nome_premio}"* atingiu 100%! Vá ao painel sortear! 🏆`);
+                            if (adminZap) {
+                                enviarMensagemZap(adminZap, `🚨 *ALERTA DE RIFA LOTADA!* 🚨\n\nA rifa *"${rifa.nome_premio}"* atingiu 100%! Vá ao painel sortear! 🏆`);
+                            }
                         }
                     }
                 });
-
                 res.send({message:"Ok"});
             });
         });
     });
 });
+	// ==========================================
+// ROTAS DE RECUPERAÇÃO DE SENHA
+// ==========================================
 
-app.listen(PORT, () => { console.log(`🚀 Servidor rodando na porta ${PORT}`); });
+// 1. SOLICITAR RECUPERAÇÃO (envia o código por WhatsApp)
+app.post('/api/auth/recuperar-senha', async (req, res) => {
+    const { telefone } = req.body;
+    
+    if (!telefone) {
+        return res.status(400).json({ message: "Telefone é obrigatório." });
+    }
+
+    // 🔥 BUSCA O USUÁRIO PELO TELEFONE
+    db.query("SELECT id, nome FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
+        if (err || results.length === 0) {
+            return res.status(404).json({ message: "Usuário não encontrado." });
+        }
+
+        const user = results[0];
+        
+        // 🔥 GERA UM CÓDIGO DE 6 DÍGITOS
+        const codigo = Math.floor(100000 + Math.random() * 900000);
+        const expiracao = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+
+        // 🔥 SALVA O CÓDIGO NO BANCO (criar tabela se não existir)
+        db.query(
+            "INSERT INTO recuperacao_senha (usuario_id, codigo, expiracao) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE codigo = ?, expiracao = ?",
+            [user.id, codigo, expiracao, codigo, expiracao],
+            (errInsert) => {
+                if (errInsert) {
+                    console.error('Erro ao salvar código:', errInsert);
+                    return res.status(500).json({ message: "Erro ao gerar código." });
+                }
+
+                // 🔥 ENVIA O CÓDIGO POR WHATSAPP
+                const msg = `🔐 *Recuperação de Senha - Mentora Tupperware*\n\nOlá, ${user.nome}! Você solicitou a recuperação de senha.\n\nSeu código de verificação é:\n\n*${codigo}*\n\nEste código é válido por 15 minutos.\n\nSe não foi você, ignore esta mensagem.`;
+                enviarMensagemZap(telefone, msg);
+
+                res.json({ 
+                    message: "Código enviado para seu WhatsApp.", 
+                    usuario_id: user.id 
+                });
+            }
+        );
+    });
+});
+
+// 2. VERIFICAR CÓDIGO E REDEFINIR SENHA
+app.post('/api/auth/redefinir-senha', async (req, res) => {
+    const { usuario_id, codigo, nova_senha } = req.body;
+
+    if (!usuario_id || !codigo || !nova_senha) {
+        return res.status(400).json({ message: "Todos os campos são obrigatórios." });
+    }
+
+    if (nova_senha.length < 6) {
+        return res.status(400).json({ message: "A senha deve ter pelo menos 6 caracteres." });
+    }
+
+    // 🔥 VERIFICA O CÓDIGO
+    db.query(
+        "SELECT codigo, expiracao FROM recuperacao_senha WHERE usuario_id = ? ORDER BY id DESC LIMIT 1",
+        [usuario_id],
+        async (err, results) => {
+            if (err || results.length === 0) {
+                return res.status(404).json({ message: "Código não encontrado. Solicite um novo." });
+            }
+
+            const registro = results[0];
+
+            // 🔥 VERIFICA SE O CÓDIGO É VÁLIDO
+            if (registro.codigo !== parseInt(codigo)) {
+                return res.status(400).json({ message: "Código inválido." });
+            }
+
+            // 🔥 VERIFICA SE O CÓDIGO EXPIRou
+            if (new Date() > new Date(registro.expiracao)) {
+                return res.status(400).json({ message: "Código expirado. Solicite um novo." });
+            }
+
+            // 🔥 HASH DA NOVA SENHA
+            const salt = await bcrypt.genSalt(10);
+            const senhaHash = await bcrypt.hash(nova_senha, salt);
+
+            // 🔥 ATUALIZA A SENHA
+            db.query(
+                "UPDATE clientes SET senha = ? WHERE id = ?",
+                [senhaHash, usuario_id],
+                (errUpdate) => {
+                    if (errUpdate) {
+                        console.error('Erro ao atualizar senha:', errUpdate);
+                        return res.status(500).json({ message: "Erro ao redefinir senha." });
+                    }
+
+                    // 🔥 REMOVE O CÓDIGO USADO
+                    db.query("DELETE FROM recuperacao_senha WHERE usuario_id = ?", [usuario_id]);
+
+                    res.json({ message: "Senha redefinida com sucesso!" });
+                }
+            );
+        }
+    );
+});
+    // ==========================================
+// ROTA PARA VERIFICAR STATUS DO PAGAMENTO
+// ==========================================
+app.get('/api/pagamento/:id/status', (req, res) => {
+    const paymentId = req.params.id;
+    
+    db.query(
+        "SELECT status, numero FROM rifa_numeros WHERE id_pagamento_externo = ?",
+        [paymentId],
+        (err, results) => {
+            if (err) {
+                console.error('Erro ao buscar status:', err);
+                return res.status(500).json({ error: 'Erro ao buscar status' });
+            }
+            
+            if (results.length === 0) {
+                return res.status(404).json({ status: 'pending' });
+            }
+            
+            const allPago = results.every(r => r.status === 'Pago');
+            const numeros = results.map(r => r.numero);
+            
+            res.json({
+                status: allPago ? 'approved' : 'pending',
+                numeros: numeros
+            });
+        }
+    );
+});
+
+// ==========================================
+// ROTA PARA VERIFICAR STATUS DO PAGAMENTO
+// ==========================================
+app.get('/api/pagamento/:id/status', (req, res) => {
+    const paymentId = req.params.id;
+    
+    db.query(
+        "SELECT status, numero FROM rifa_numeros WHERE id_pagamento_externo = ?",
+        [paymentId],
+        (err, results) => {
+            if (err) {
+                console.error('Erro ao buscar status:', err);
+                return res.status(500).json({ error: 'Erro ao buscar status' });
+            }
+            
+            if (results.length === 0) {
+                return res.status(404).json({ status: 'pending' });
+            }
+            
+            const allPago = results.every(r => r.status === 'Pago');
+            const numeros = results.map(r => r.numero);
+            
+            res.json({
+                status: allPago ? 'approved' : 'pending',
+                numeros: numeros
+            });
+        }
+    );
+});
+
+
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`✅ Conectado ao MySQL!`);
+});

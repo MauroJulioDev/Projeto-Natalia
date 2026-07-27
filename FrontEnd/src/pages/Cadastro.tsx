@@ -17,7 +17,7 @@ export default function Cadastro() {
     setErrorMessage('');
     
     try {
-      const response = await fetch('http://localhost:3001/api/consultoras', {
+      const response = await fetch('http://179.197.236.219/api/consultoras', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

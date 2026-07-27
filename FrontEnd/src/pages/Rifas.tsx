@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent } from 'react';
-import { Ticket, X, ShoppingBag, AlertCircle, Check, Gift, Calendar, Trophy, Medal, Flame, Clock, Sparkles, Crown, ChevronDown, ChevronUp } from 'lucide-react';
+import { Ticket, X, ShoppingBag, AlertCircle, Check, Gift, Calendar, Trophy, Medal, Flame, Clock, Sparkles, Crown, ChevronDown, ChevronUp, Copy, CheckCheck } from 'lucide-react';
 import { Card, Button } from '../components/UI';
 import { Rifa, NumeroRifa, ClienteUser } from '../types';
 import toast from 'react-hot-toast';
@@ -9,22 +9,37 @@ interface RifasProps {
   onRedirectLogin: () => void;
 }
 
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'https://nataliaemiliatupper.cloud';
 
 export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
+  const [pixData, setPixData] = useState<{
+    qrCode: string;
+    copiaCola: string;
+    valor: number;
+    expiracao: string;
+    id?: string;
+  } | null>(null);
+  const [showPixModal, setShowPixModal] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [pagamentoStatus, setPagamentoStatus] = useState<'idle' | 'loading' | 'approved'>('idle');
+  const [numerosComprados, setNumerosComprados] = useState<number[]>([]);
+
   const [rifas, setRifas] = useState<Rifa[]>([]);
   const [selectedRifa, setSelectedRifa] = useState<Rifa | null>(null);
   const [numerosOcupados, setNumerosOcupados] = useState<NumeroRifa[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
-  
-  const [ranking, setRanking] = useState<any[]>([]); 
-  const [globalRanking, setGlobalRanking] = useState<any[]>([]); 
-  
-  const [compradorInfo, setCompradorInfo] = useState({ nome: '', telefone: '' });
-  const [pagamentoStatus, setPagamentoStatus] = useState<'idle' | 'loading'>('idle');
+
+  const [ranking, setRanking] = useState<any[]>([]);
+  const [globalRanking, setGlobalRanking] = useState<any[]>([]);
+
+  const [compradorInfo, setCompradorInfo] = useState({
+    nome: '',
+    telefone: '',
+    email: ''
+  });
+  const [pagamentoLoading, setPagamentoLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // --- NOVO ESTADO: Controle de visualização do histórico ---
   const [mostrarTodasEncerradas, setMostrarTodasEncerradas] = useState(false);
 
   const formatarReal = (valor: number) => {
@@ -36,16 +51,17 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
 
   const mesAtual = new Date().toLocaleString('pt-BR', { month: 'long' });
 
-  useEffect(() => { 
+  useEffect(() => {
     if (clientUser) {
-      setCompradorInfo({ 
-        nome: clientUser.nome, 
-        telefone: clientUser.telefone || '' 
-      }); 
+        setCompradorInfo({
+            nome: clientUser.nome,
+            telefone: clientUser.telefone || '',
+            email: clientUser.email || ''
+        });
     }
   }, [clientUser]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     fetch(`${API_URL}/api/rifas`)
       .then(r => r.json())
       .then((data: Rifa[]) => {
@@ -58,29 +74,51 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         });
         setRifas(rifasOrdenadas);
       })
-      .catch(err => { 
-        console.error(err); 
-        setErrorMsg("Não foi possível carregar as rifas no momento."); 
-      }); 
-      
+      .catch(err => {
+        console.error(err);
+        setErrorMsg("Não foi possível carregar as rifas no momento.");
+      });
+
     fetch(`${API_URL}/api/ranking-global`)
       .then(r => r.json())
       .then(setGlobalRanking)
       .catch(err => console.log("Sem dados de ranking global", err));
   }, []);
 
-  useEffect(() => { 
+  useEffect(() => {
     if (selectedRifa) {
       fetch(`${API_URL}/api/rifas/${selectedRifa.id}/numeros`)
         .then(r => r.json())
         .then(setNumerosOcupados);
-        
+
       fetch(`${API_URL}/api/rifas/${selectedRifa.id}/ranking`)
         .then(r => r.json())
         .then(setRanking)
         .catch(() => setRanking([]));
     }
   }, [selectedRifa]);
+
+  // 🔥 POLLING: VERIFICA O STATUS DO PAGAMENTO A CADA 5 SEGUNDOS
+  useEffect(() => {
+    if (!pixData?.id) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/pagamento/${pixData.id}/status`);
+        const data = await res.json();
+        if (data.status === 'approved') {
+          setPagamentoStatus('approved');
+          setNumerosComprados(data.numeros || []);
+          clearInterval(interval);
+          toast.success('Pagamento confirmado!');
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status:', error);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [pixData]);
 
   const toggleNumber = (num: number) => {
     if (selectedRifa?.vencedor_numero !== null && selectedRifa?.vencedor_numero !== undefined) return;
@@ -92,44 +130,53 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     e.preventDefault();
     if (!clientUser) { onRedirectLogin(); return; }
     if (!selectedRifa || selectedNumbers.length === 0) return;
-    
-    setPagamentoStatus('loading');
-    toast.loading("Processando reserva...", { id: 'pagamento' }); 
-    
-    try {
-        const body = { 
-          numeros: selectedNumbers, 
-          nome: compradorInfo.nome, 
-          telefone: compradorInfo.telefone, 
-          valorUnitario: selectedRifa.valor_numero, 
-          tituloRifa: selectedRifa.nome_premio, 
-          clienteId: clientUser.id 
-        };
-        
-        const res = await fetch(`${API_URL}/api/rifas/${selectedRifa.id}/pagar`, { 
-          method: 'POST', 
-          headers: {'Content-Type': 'application/json'}, 
-          body: JSON.stringify(body) 
-        });
-        
-        const data = await res.json();
-        
-        if (res.status === 409) throw new Error(data.message); 
 
-        if (data.link_pagamento) {
-          toast.success("Redirecionando para o Mercado Pago...", { id: 'pagamento' });
-          window.location.href = data.link_pagamento;
-        } else {
-          throw new Error(data.message || "Erro ao gerar link de pagamento");
+    setPagamentoLoading(true);
+    toast.loading("Processando reserva...", { id: 'pagamento' });
+
+    try {
+        const body = {
+            numeros: selectedNumbers,
+            nome: compradorInfo.nome,
+            telefone: compradorInfo.telefone,
+            email: clientUser?.email || '',
+            valorUnitario: selectedRifa.valor_numero,
+            tituloRifa: selectedRifa.nome_premio,
+            clienteId: clientUser.id
+        };
+
+        const res = await fetch(`${API_URL}/api/rifas/${selectedRifa.id}/pagar`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+
+        const data = await res.json();
+
+        if (res.status === 409) {
+          const msg = data.message || "Números indisponíveis. Eles podem ter sido reservados por outro cliente.";
+          toast.error(msg);
+          throw new Error(msg);
         }
-    } catch (err: any) { 
-      toast.error(err.message || "Ocorreu um erro ao processar o pagamento.", { id: 'pagamento' });
-      setPagamentoStatus('idle');
-      if (selectedRifa) {
-        fetch(`${API_URL}/api/rifas/${selectedRifa.id}/numeros`)
-          .then(r => r.json())
-          .then(setNumerosOcupados);
-      }
+
+        if (data.success && data.pix) {
+            toast.success("Reserva confirmada! Realize o pagamento.", { id: 'pagamento' });
+            setPixData({ ...data.pix, id: data.pix.id || data.pix.payment_id });
+            setShowPixModal(true);
+            setSelectedNumbers([]);
+            setSelectedRifa(null);
+            setPagamentoLoading(false);
+        } else {
+            throw new Error(data.message || "Erro ao gerar pagamento");
+        }
+    } catch (err: any) {
+        toast.error(err.message || "Ocorreu um erro ao processar o pagamento.", { id: 'pagamento' });
+        setPagamentoLoading(false);
+        if (selectedRifa) {
+            fetch(`${API_URL}/api/rifas/${selectedRifa.id}/numeros`)
+                .then(r => r.json())
+                .then(setNumerosOcupados);
+        }
     }
   };
 
@@ -137,40 +184,58 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     if (!selectedRifa) return null;
     const grid: JSX.Element[] = [];
     const isSorteada = selectedRifa.vencedor_numero !== null && selectedRifa.vencedor_numero !== undefined;
-    
+
+    // 🔥 LISTA DE STATUS QUE CONSIDERAM O NÚMERO OCUPADO
+    const statusOcupado = ['pago', 'vendido', 'reservado'];
+
     for (let i = 1; i <= selectedRifa.total_numeros; i++) {
-        const ocupado = numerosOcupados.find(n => n.numero === i);
+        const ocupado = numerosOcupados.find(n => 
+            n.numero === i && statusOcupado.includes(n.status.toLowerCase())
+        );
         const isSelected = selectedNumbers.includes(i);
-        
+
         let baseClass = "w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-200 border shadow-sm";
         let statusClass = "bg-white hover:bg-pink-50 hover:border-pink-300 cursor-pointer border-gray-200 text-gray-600";
-        
+
         if (isSorteada) {
-            if (ocupado && ocupado.status === 'Pago') {
-                statusClass = i === selectedRifa.vencedor_numero 
-                    ? "bg-yellow-400 text-yellow-900 border-yellow-500 ring-2 ring-yellow-400 ring-offset-2 scale-110 shadow-lg cursor-default z-10" 
+            if (ocupado) {
+                statusClass = i === selectedRifa.vencedor_numero
+                    ? "bg-yellow-400 text-yellow-900 border-yellow-500 ring-2 ring-yellow-400 ring-offset-2 scale-110 shadow-lg cursor-default z-10"
                     : "bg-gray-100 text-gray-400 border-transparent cursor-default";
             } else {
                 statusClass = "bg-white text-gray-300 border-gray-100 cursor-default opacity-50";
             }
         } else {
             if (ocupado) {
-              statusClass = ocupado.status === 'Pago' 
-                ? "bg-gray-100 text-gray-300 cursor-not-allowed border-transparent" 
-                : "bg-yellow-100 text-yellow-600 border-yellow-200 cursor-not-allowed";
+                const status = ocupado.status.toLowerCase();
+                if (status === 'pago' || status === 'vendido') {
+                    statusClass = "bg-green-500 text-white border-green-600 cursor-not-allowed";
+                } else if (status === 'reservado') {
+                    statusClass = "bg-yellow-400 text-yellow-900 border-yellow-500 cursor-not-allowed";
+                } else {
+                    statusClass = "bg-gray-100 text-gray-300 cursor-not-allowed border-transparent";
+                }
             } else if (isSelected) {
-              statusClass = "bg-pink-600 text-white border-pink-600 transform scale-110 shadow-md ring-2 ring-pink-200";
+                statusClass = "bg-pink-600 text-white border-pink-600 transform scale-110 shadow-md ring-2 ring-pink-200";
             }
         }
-        
+
         grid.push(
-          <div key={i} onClick={() => !ocupado && toggleNumber(i)} className={`${baseClass} ${statusClass}`}>
-            {ocupado && ocupado.status === 'Pago' ? (isSorteada && i === selectedRifa.vencedor_numero ? <Trophy size={16}/> : <Check size={16}/>) : i}
-          </div>
+            <div key={i} onClick={() => !ocupado && toggleNumber(i)} className={`${baseClass} ${statusClass}`}>
+                {ocupado ? (
+                    (() => {
+                        const status = ocupado.status.toLowerCase();
+                        if (status === 'pago' || status === 'vendido') {
+                            return isSorteada && i === selectedRifa.vencedor_numero ? <Trophy size={16}/> : <Check size={16}/>;
+                        }
+                        return i;
+                    })()
+                ) : i}
+            </div>
         );
     }
     return grid;
-  };
+};
 
   if (errorMsg) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -183,13 +248,10 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
     </div>
   );
 
-  // --- FILTRO INTELIGENTE DE EXIBIÇÃO (MINIMIZAÇÃO DE RIFAS ANTIGAS) ---
   const rifasAbertas = rifas.filter(r => r.vencedor_numero === null || r.vencedor_numero === undefined);
   const rifasEncerradas = rifas.filter(r => r.vencedor_numero !== null && r.vencedor_numero !== undefined);
-  
-  // Se tiver 5 ou mais encerradas, mostramos apenas 5 por padrão (para dar Prova Social) e escondemos o resto
   const limiteEncerradas = rifasEncerradas.length >= 5 ? 5 : rifasEncerradas.length;
-  
+
   const rifasVisiveis = [
     ...rifasAbertas,
     ...(mostrarTodasEncerradas ? rifasEncerradas : rifasEncerradas.slice(0, limiteEncerradas))
@@ -197,7 +259,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col py-8 md:py-12 px-4 animate-fade-in">
-      
+
       <div className="text-center mb-8 md:mb-10">
         <div className="inline-block p-3 md:p-4 rounded-3xl bg-pink-100 mb-4 md:mb-6 shadow-inner shadow-pink-200">
           <Gift className="w-8 h-8 md:w-10 md:h-10 text-pink-600" />
@@ -226,8 +288,8 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                     <div key={idx} className="w-full md:w-auto bg-gray-50 flex flex-row md:flex-col items-center justify-between md:justify-center p-4 md:p-6 rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm md:hover:-translate-y-2 transition-all flex-1">
                         <div className="flex items-center gap-3 md:flex-col">
                           <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center font-black text-white text-lg md:text-2xl md:mb-2 shadow-lg
-                             ${idx === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 shadow-yellow-200 md:scale-110 ring-2 md:ring-4 ring-yellow-100' : 
-                               idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' : 
+                             ${idx === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 shadow-yellow-200 md:scale-110 ring-2 md:ring-4 ring-yellow-100' :
+                               idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' :
                                'bg-gradient-to-br from-orange-300 to-orange-500'}`}>
                              {idx + 1}º
                           </div>
@@ -248,7 +310,6 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
 
       <div className="container mx-auto max-w-6xl mb-20">
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-10">
-          {/* Mapeando as rifas VISÍVEIS de forma inteligente */}
           {rifasVisiveis.map(rifa => {
             const porcentagem = Math.min((rifa.numeros_vendidos / rifa.total_numeros) * 100, 100);
             const isSorteada = rifa.vencedor_numero !== null && rifa.vencedor_numero !== undefined;
@@ -257,7 +318,7 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
               if (isSorteada) return <div className="absolute top-4 left-4 bg-gradient-to-r from-gray-900 to-gray-800 text-yellow-400 border border-gray-700 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-xs font-black shadow-xl flex items-center gap-1.5 z-20 tracking-widest uppercase"><Trophy size={14}/> Sorteio Realizado</div>;
               if (porcentagem >= 100) return <div className="absolute top-4 left-4 bg-gradient-to-r from-yellow-400 to-yellow-500 text-yellow-950 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-xs font-black shadow-lg flex items-center gap-1.5 z-20 tracking-widest uppercase"><Clock size={14} className="animate-spin-slow" /> Aguardando</div>;
               if (porcentagem >= 80) return <div className="absolute top-4 left-4 bg-gradient-to-r from-red-500 to-rose-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-xs font-black shadow-lg flex items-center gap-1.5 z-20 tracking-widest uppercase"><Flame size={14} className="animate-pulse" /> Últimos Números!</div>;
-              return null; 
+              return null;
             };
 
             return (
@@ -274,14 +335,14 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
                       </div>
                     )}
                     <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg text-base md:text-lg font-black shadow-lg text-gray-900 flex items-center gap-2 z-10 border border-white/40">
-                      <span className="text-[9px] md:text-[10px] font-bold text-gray-400 uppercase tracking-widest">Apenas</span> 
+                      <span className="text-[9px] md:text-[10px] font-bold text-gray-400 uppercase tracking-widest">Apenas</span>
                       {formatarReal(Number(rifa.valor_numero))}
                     </div>
                  </div>
-                 
+
                  <div className="p-6 md:p-8 flex flex-col flex-grow relative">
                     <h3 className="font-black text-xl md:text-2xl text-gray-900 mb-3 line-clamp-2 leading-tight">{rifa.nome_premio}</h3>
-                    
+
                     {isSorteada ? (
                       <div className="mb-6 p-3 md:p-4 bg-green-50 rounded-2xl border border-green-100 flex justify-between items-center">
                         <div className="text-green-800 font-bold text-xs md:text-sm">Número Ganhador:</div>
@@ -310,10 +371,9 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
           })}
         </div>
 
-        {/* BOTÃO DE EXPANDIR (Aparece apenas se tiver 5 ou mais rifas encerradas) */}
         {rifasEncerradas.length >= 5 && (
           <div className="mt-12 flex justify-center animate-fade-in">
-            <button 
+            <button
               onClick={() => setMostrarTodasEncerradas(!mostrarTodasEncerradas)}
               className="bg-white border-2 border-pink-100 text-pink-600 hover:bg-pink-50 hover:border-pink-300 px-8 py-3.5 rounded-full font-black text-sm transition-all shadow-sm hover:shadow-md flex items-center gap-2 active:scale-95"
             >
@@ -327,113 +387,264 @@ export default function Rifas({ clientUser, onRedirectLogin }: RifasProps) {
         )}
       </div>
 
-      {/* MODAL OTIMIZADO PARA MOBILE (FULL SCREEN) */}
+      {/* MODAL */}
       {selectedRifa && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center md:p-4">
-            <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm" onClick={() => setSelectedRifa(null)}></div>
+          <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm" onClick={() => setSelectedRifa(null)}></div>
 
-            <div className="relative bg-white md:rounded-[2.5rem] shadow-2xl max-w-5xl w-full h-[100dvh] md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in">
-                
-                <div className="bg-gradient-to-r from-pink-600 to-purple-700 text-white p-5 md:p-8 flex justify-between items-center z-10 relative">
-                    <div className="relative z-10 pr-4">
-                      <h3 className="font-black text-lg md:text-3xl tracking-tight leading-tight line-clamp-2">{selectedRifa.nome_premio}</h3>
-                      <p className="text-pink-100 text-xs md:text-sm mt-1 font-medium">
-                        {selectedRifa.vencedor_numero !== null ? 'Sorteio Finalizado.' : 'Toque nos números para selecionar'}
-                      </p>
-                    </div>
-                    <button onClick={() => setSelectedRifa(null)} className="relative z-10 bg-white/20 p-2.5 md:p-3 rounded-xl md:rounded-full flex-shrink-0 active:scale-90 transition-transform">
-                      <X size={24}/>
-                    </button>
+          <div className="relative bg-white md:rounded-[2.5rem] shadow-2xl max-w-5xl w-full h-[100dvh] md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden animate-scale-in">
+
+            <div className="bg-gradient-to-r from-pink-600 to-purple-700 text-white p-5 md:p-8 flex justify-between items-center z-10 relative">
+              <div className="relative z-10 pr-4">
+                <h3 className="font-black text-lg md:text-3xl tracking-tight leading-tight line-clamp-2">{selectedRifa.nome_premio}</h3>
+                <p className="text-pink-100 text-xs md:text-sm mt-1 font-medium">
+                  {selectedRifa.vencedor_numero !== null ? 'Sorteio Finalizado.' : 'Toque nos números para selecionar'}
+                </p>
+              </div>
+              <button onClick={() => setSelectedRifa(null)} className="relative z-10 bg-white/20 p-2.5 md:p-3 rounded-xl md:rounded-full flex-shrink-0 active:scale-90 transition-transform">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
+              <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-gray-50 pb-[240px] md:pb-10 custom-scrollbar">
+                <div className="flex flex-wrap gap-4 justify-center mb-4 bg-gray-50 p-3 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-green-500 border border-green-600"></span>
+                    <span className="text-xs font-medium text-gray-700">Vendido</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-yellow-400 border border-yellow-500"></span>
+                    <span className="text-xs font-medium text-gray-700">Reservado</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-white border-2 border-gray-300"></span>
+                    <span className="text-xs font-medium text-gray-700">Disponível</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-pink-600 border border-pink-600"></span>
+                    <span className="text-xs font-medium text-gray-700">Selecionado</span>
+                  </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
-                    
-                    <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-gray-50 pb-[240px] md:pb-10 custom-scrollbar">
-                      
-                      <div className="flex flex-wrap gap-2.5 md:gap-4 justify-center">
-                        {renderGrid()}
-                      </div>
+                <div className="flex flex-wrap gap-2.5 md:gap-4 justify-center">
+                  {renderGrid()}
+                </div>
 
-                      {ranking.length > 0 && (
-                        <div className="max-w-md mx-auto mt-8 mb-4 bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-gray-100">
-                          <div className="flex items-center justify-center gap-2 mb-4 md:mb-6">
-                            <Trophy size={24} className="text-yellow-500" />
-                            <h4 className="font-black text-gray-800 text-lg md:text-2xl">Top 3 Compradores</h4>
+                {ranking.length > 0 && (
+                  <div className="max-w-md mx-auto mt-8 mb-4 bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-center gap-2 mb-4 md:mb-6">
+                      <Trophy size={24} className="text-yellow-500" />
+                      <h4 className="font-black text-gray-800 text-lg md:text-2xl">Top 3 Compradores</h4>
+                    </div>
+                    <div className="space-y-2.5">
+                      {ranking.map((user, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shadow-md text-base ${idx === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500' : idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' : 'bg-gradient-to-br from-orange-300 to-orange-500'}`}>
+                              {idx + 1}º
+                            </div>
+                            <span className="font-bold text-gray-700 text-sm md:text-base">
+                              {user.comprador_nome.split(' ')[0]} {user.comprador_nome.split(' ').length > 1 ? user.comprador_nome.split(' ')[1].charAt(0) + '.' : ''}
+                            </span>
                           </div>
-                          <div className="space-y-2.5">
-                            {ranking.map((user, idx) => (
-                              <div key={idx} className="flex items-center justify-between bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                                 <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-white shadow-md text-base
-                                       ${idx === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500' : idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' : 'bg-gradient-to-br from-orange-300 to-orange-500'}`}>
-                                       {idx + 1}º
-                                    </div>
-                                    <span className="font-bold text-gray-700 text-sm md:text-base">
-                                      {user.comprador_nome.split(' ')[0]} {user.comprador_nome.split(' ').length > 1 ? user.comprador_nome.split(' ')[1].charAt(0) + '.' : ''}
-                                    </span>
-                                 </div>
-                                 <div className="bg-pink-100 text-pink-700 px-3 py-1 rounded-lg font-black text-xs border border-pink-200">
-                                    {user.total_numeros} cotas
-                                 </div>
-                              </div>
-                            ))}
+                          <div className="bg-pink-100 text-pink-700 px-3 py-1 rounded-lg font-black text-xs border border-pink-200">
+                            {user.total_numeros} cotas
                           </div>
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="absolute md:static bottom-0 left-0 w-full md:w-[400px] bg-white border-t md:border-l md:border-t-0 border-gray-200 shadow-[0_-15px_30px_rgba(0,0,0,0.1)] md:shadow-2xl z-30 flex flex-col">
+                {selectedRifa.vencedor_numero !== null && selectedRifa.vencedor_numero !== undefined ? (
+                  <div className="p-6 md:p-8 bg-gray-50 flex flex-col items-center justify-center text-center h-full">
+                    <div className="w-16 h-16 md:w-24 md:h-24 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                      <Trophy className="w-8 h-8 md:w-12 md:h-12 text-yellow-500" />
+                    </div>
+                    <h4 className="text-xl md:text-2xl font-black text-gray-900 mb-4">Sorteio Encerrado</h4>
+                    <div className="bg-white border-2 border-green-100 p-6 rounded-3xl shadow-xl w-full">
+                      <p className="text-[10px] md:text-xs font-black text-green-800 uppercase tracking-widest mb-2">Número Ganhador</p>
+                      <span className="text-5xl md:text-6xl font-black text-green-500">#{selectedRifa.vencedor_numero}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 md:p-8 flex-1 flex flex-col">
+                    <div className="hidden md:flex border-b border-gray-100 pb-6 mb-6">
+                      <h4 className="font-black text-gray-900 flex items-center gap-3 text-xl">
+                        <div className="p-2 bg-pink-50 rounded-xl">
+                          <ShoppingBag size={24} className="text-pink-600" />
+                        </div>
+                        Seu Carrinho
+                      </h4>
                     </div>
 
-                    <div className="absolute md:static bottom-0 left-0 w-full md:w-[400px] bg-white border-t md:border-l md:border-t-0 border-gray-200 shadow-[0_-15px_30px_rgba(0,0,0,0.1)] md:shadow-2xl z-30 flex flex-col">
-                        {selectedRifa.vencedor_numero !== null && selectedRifa.vencedor_numero !== undefined ? (
-                            <div className="p-6 md:p-8 bg-gray-50 flex flex-col items-center justify-center text-center h-full">
-                                <div className="w-16 h-16 md:w-24 md:h-24 bg-yellow-100 rounded-full flex items-center justify-center mb-4"><Trophy className="w-8 h-8 md:w-12 md:h-12 text-yellow-500" /></div>
-                                <h4 className="text-xl md:text-2xl font-black text-gray-900 mb-4">Sorteio Encerrado</h4>
-                                <div className="bg-white border-2 border-green-100 p-6 rounded-3xl shadow-xl w-full">
-                                    <p className="text-[10px] md:text-xs font-black text-green-800 uppercase tracking-widest mb-2">Número Ganhador</p>
-                                    <span className="text-5xl md:text-6xl font-black text-green-500">#{selectedRifa.vencedor_numero}</span>
-                                </div>
+                    {selectedNumbers.length > 0 ? (
+                      <div className="space-y-4 md:space-y-6">
+                        <div className="flex justify-between items-end bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                          <div>
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Total a pagar</span>
+                            <span className="text-sm font-bold text-gray-600">{selectedNumbers.length} cota(s)</span>
+                          </div>
+                          <span className="text-3xl md:text-4xl font-black text-green-600 tracking-tighter">
+                            {formatarReal(selectedNumbers.length * selectedRifa.valor_numero)}
+                          </span>
+                        </div>
+
+                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">E-mail para receber a notificação</label>
+                          <input
+                            type="email"
+                            placeholder="seu@email.com"
+                            value={compradorInfo.email}
+                            onChange={(e) => setCompradorInfo({...compradorInfo, email: e.target.value})}
+                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 outline-none font-medium"
+                          />
+                          <p className="text-[10px] text-gray-400 mt-1">O comprovante será enviado para este e-mail.</p>
+                        </div>
+
+                        <form onSubmit={handlePagar} className="space-y-3">
+                          {!clientUser && (
+                            <div className="bg-yellow-50 text-yellow-800 p-3 text-xs rounded-xl border border-yellow-200 flex gap-2">
+                              <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-yellow-600"/>
+                              <span className="font-medium">Faça login para finalizar a compra.</span>
                             </div>
-                        ) : (
-                            <div className="p-4 md:p-8 flex-1 flex flex-col">
-                                <div className="hidden md:flex border-b border-gray-100 pb-6 mb-6">
-                                   <h4 className="font-black text-gray-900 flex items-center gap-3 text-xl">
-                                     <div className="p-2 bg-pink-50 rounded-xl"><ShoppingBag size={24} className="text-pink-600"/></div> Seu Carrinho
-                                   </h4>
-                                </div>
-
-                                {selectedNumbers.length > 0 ? (
-                                    <div className="space-y-4 md:space-y-6">
-                                        <div className="flex justify-between items-end bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                                          <div>
-                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Total a pagar</span>
-                                            <span className="text-sm font-bold text-gray-600">{selectedNumbers.length} cota(s)</span>
-                                          </div>
-                                          <span className="text-3xl md:text-4xl font-black text-green-600 tracking-tighter">{formatarReal(selectedNumbers.length * selectedRifa.valor_numero)}</span>
-                                        </div>
-
-                                        <form onSubmit={handlePagar} className="space-y-3">
-                                            {!clientUser && (
-                                              <div className="bg-yellow-50 text-yellow-800 p-3 text-xs rounded-xl border border-yellow-200 flex gap-2">
-                                                <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-yellow-600"/>
-                                                <span className="font-medium">Faça login para finalizar a compra.</span>
-                                              </div>
-                                            )}
-
-                                            <Button type="submit" className="w-full py-4 md:py-5 text-lg md:text-xl font-black bg-green-500 hover:bg-green-600 shadow-xl shadow-green-200 rounded-[1.25rem]" disabled={pagamentoStatus === 'loading'}>
-                                              {pagamentoStatus === 'loading' ? 'Processando...' : (clientUser ? 'Pagar com PIX' : 'Fazer Login')}
-                                            </Button>
-                                        </form>
-                                    </div>
-                                ) : (
-                                    <div className="h-[120px] md:h-full flex flex-col items-center justify-center text-gray-300">
-                                      <p className="font-bold text-gray-400">Carrinho Vazio</p>
-                                      <p className="text-xs mt-1">Selecione os números acima.</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
+                          )}
+                          <Button
+                            type="submit"
+                            className="w-full py-4 md:py-5 text-lg md:text-xl font-black bg-green-500 hover:bg-green-600 shadow-xl shadow-green-200 rounded-[1.25rem]"
+                            disabled={pagamentoLoading}
+                          >
+                            {pagamentoLoading
+                              ? 'Processando...'
+                              : (clientUser ? 'Pagar com PIX' : 'Fazer Login')
+                            }
+                          </Button>
+                        </form>
+                      </div>
+                    ) : (
+                      <div className="h-[120px] md:h-full flex flex-col items-center justify-center text-gray-300">
+                        <p className="font-bold text-gray-400">Carrinho Vazio</p>
+                        <p className="text-xs mt-1">Selecione os números acima.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DO PIX */}
+      {showPixModal && pixData && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full overflow-hidden animate-scale-in">
+            
+            {pagamentoStatus === 'approved' ? (
+              // 🔥 TELA DE CONFIRMAÇÃO
+              <div className="p-8 text-center">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-10 h-10 text-green-600" />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900 mb-2">Pagamento Confirmado!</h3>
+                <p className="text-gray-600 mb-4">Seus números foram garantidos com sucesso.</p>
+                <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                  <p className="text-sm text-gray-500">Números comprados:</p>
+                  <div className="flex flex-wrap gap-2 justify-center mt-2">
+                    {numerosComprados.map(num => (
+                      <span key={num} className="bg-green-100 text-green-700 font-bold px-3 py-1 rounded-lg">
+                        #{num}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  onClick={() => {
+                    setShowPixModal(false);
+                    setPixData(null);
+                    setPagamentoStatus('idle');
+                    setNumerosComprados([]);
+                  }}
+                  className="w-full bg-gray-900 text-white font-black py-4 rounded-xl hover:bg-gray-800"
+                >
+                  Ver meus números
+                </Button>
+              </div>
+            ) : (
+              // 🔥 TELA DE PAGAMENTO (QR CODE)
+              <>
+                <div className="bg-gradient-to-r from-green-500 to-green-600 p-6 text-center">
+                  <h3 className="text-2xl font-black text-white">Pagamento via PIX</h3>
+                  <p className="text-green-100 text-sm">Escaneie o QR Code ou copie o código</p>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  {/* QR Code */}
+                  <div className="flex justify-center">
+                    {pixData.qrCode ? (
+                      <img 
+                        src={`data:image/png;base64,${pixData.qrCode}`}
+                        alt="QR Code PIX"
+                        className="w-48 h-48 object-contain border-2 border-gray-200 rounded-xl p-2"
+                      />
+                    ) : (
+                      <div className="w-48 h-48 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">
+                        QR Code indisponível
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Código Copia e Cola */}
+                  <div>
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest block mb-2">
+                      Código Copia e Cola
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={pixData.copiaCola || ''}
+                        readOnly
+                        className="flex-1 p-3 bg-gray-50 rounded-xl text-sm font-mono border border-gray-200 focus:ring-2 focus:ring-green-500 outline-none"
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(pixData.copiaCola || '');
+                          setCopiado(true);
+                          toast.success('Código copiado!');
+                          setTimeout(() => setCopiado(false), 3000);
+                        }}
+                        className={`px-4 py-3 rounded-xl font-bold transition-colors ${
+                          copiado ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        {copiado ? <CheckCheck size={20} /> : <Copy size={20} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Valor e Validade */}
+                  <div className="flex justify-between text-sm text-gray-600 border-t border-gray-100 pt-4">
+                    <span>Valor: <strong className="text-gray-900">R$ {pixData.valor?.toFixed(2) || '0,00'}</strong></span>
+                    <span>Validade: <strong className="text-gray-900">15 min</strong></span>
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      setShowPixModal(false);
+                      setPixData(null);
+                      setCopiado(false);
+                    }}
+                    className="w-full bg-gray-900 text-white font-black py-4 rounded-xl hover:bg-gray-800"
+                  >
+                    Fechar
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

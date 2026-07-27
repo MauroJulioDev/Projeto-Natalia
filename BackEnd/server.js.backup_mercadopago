@@ -1,0 +1,518 @@
+require('dotenv').config();
+const { enviarMensagemZap } = require('./whatsapp');
+const express = require('express');
+const mysql = require('mysql2');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const SECRET_KEY = process.env.JWT_SECRET;
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+
+// ==========================================
+// 1. MIDDLEWARES DE SEGURANÇA
+// ==========================================
+const verifyToken = (req, res, next) => {
+    const token = req.headers['authorization'];
+    if (!token) return res.status(403).json({ message: "Token não fornecido." });
+
+    jwt.verify(token.split(' ')[1], SECRET_KEY, (err, decoded) => {
+        if (err) return res.status(401).json({ message: "Sessão expirada. Logue novamente." });
+        req.userId = decoded.id;
+        next();
+    });
+};
+
+// ==========================================
+// 2. CONEXÃO COM BANCO DE DADOS
+// ==========================================
+const db = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '10140131',
+    database: process.env.DB_NAME || 'tupperware_db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
+
+db.getConnection((err) => {
+    if (err) console.error('❌ Erro DB:', err.message);
+    else console.log('✅ Conectado ao MySQL!');
+});
+// ==========================================
+// FUNÇÃO PARA LIMPAR RESERVAS EXPIRADAS
+// ==========================================
+const limparReservasExpiradas = () => {
+    const sql = `DELETE FROM rifa_numeros WHERE status = 'Reservado' AND data_reserva < NOW() - INTERVAL 15 MINUTE`;
+    db.query(sql, (err) => {
+        if (err) console.error("Erro ao limpar expirados:", err);
+    });
+};
+app.get('/', (req, res) => res.send('API Online'));
+
+// ==========================================
+// 3. ROTAS DE AUTENTICAÇÃO
+// ==========================================
+app.post('/api/auth/admin-login', (req, res) => {
+    const { email, senha } = req.body;
+    if (email === 'admin' && senha === 'admin123') {
+        const token = jwt.sign({ id: 0, role: 'admin' }, SECRET_KEY, { expiresIn: '2h' });
+        res.json({ token });
+    } else {
+        res.status(401).json({ message: "Credenciais de administrador inválidas." });
+    }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+    console.log('🔴 ROTA DE REGISTRO CHAMADA');
+    console.log('📦 Dados recebidos:', req.body);
+
+    const { nome, email, telefone, senha, foto_perfil } = req.body;
+    if (!nome || !telefone || !senha) {
+        console.log('❌ Campos obrigatórios faltando');
+        return res.status(400).send({ message: "Preencha nome, telefone e senha." });
+    }
+
+    try {
+        console.log('🟡 Verificando telefone no banco...');
+        db.query("SELECT * FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
+            if (err) {
+                console.error('❌ Erro na consulta:', err);
+                return res.status(500).send({ message: "Erro no banco." });
+            }
+            console.log('🟡 Resultado da consulta:', results);
+
+            if (results.length > 0) {
+                console.log('⚠️ Telefone já cadastrado:', telefone);
+                return res.status(409).send({ message: "Este WhatsApp já está cadastrado!" });
+            }
+
+            console.log('🟡 Gerando hash da senha...');
+            const salt = await bcrypt.genSalt(10);
+            const senhaHash = await bcrypt.hash(senha, salt);
+            console.log('✅ Hash gerado com sucesso');
+
+            // 🔥 CORREÇÃO AQUI: REMOVI O CAMPO foto_perfil
+            const sql = "INSERT INTO clientes (nome, email, telefone, senha) VALUES (?, ?, ?, ?)";
+            console.log('🟡 Inserindo no banco:', sql);
+
+            db.query(sql, [nome, email || '', telefone, senhaHash], (err, result) => {
+                if (err) {
+                    console.error('❌ Erro ao inserir:', err);
+                    return res.status(500).json({ message: "Erro ao cadastrar." });
+                }
+                console.log('✅ Usuário criado com sucesso! ID:', result.insertId);
+                res.status(201).json({ id: result.insertId, message: "Usuário criado!" });
+            });
+        });
+    } catch (e) {
+        console.error('❌ ERRO NO CATCH:', e);
+        res.status(500).json({ message: "Erro interno." });
+    }
+});
+
+app.post('/api/auth/login', (req, res) => {
+    const { telefone, senha } = req.body;
+    db.query("SELECT * FROM clientes WHERE telefone = ?", [telefone], async (err, results) => {
+        if (err || results.length === 0) return res.status(401).json({ message: "WhatsApp não cadastrado." });
+
+        const user = results[0];
+        const senhaValida = await bcrypt.compare(senha, user.senha);
+        if (!senhaValida) return res.status(401).json({ message: "Senha incorreta." });
+
+        const token = jwt.sign({ id: user.id, telefone: user.telefone }, SECRET_KEY, { expiresIn: '2h' });
+        res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, foto_perfil: user.foto_perfil, telefone: user.telefone } });
+    });
+});
+
+app.get('/api/clientes/:id/historico', (req, res) => {
+    const clienteId = req.params.id;
+    const sql = `
+        SELECT rn.numero, rn.status, r.nome_premio, r.imagem_url, r.vencedor_numero
+        FROM rifa_numeros rn
+        JOIN rifas r ON rn.rifa_id = r.id
+        WHERE rn.cliente_id = ?
+        ORDER BY rn.id DESC
+    `;
+    db.query(sql, [clienteId], (err, results) => {
+        if (err) return res.status(500).json({ message: "Erro ao buscar histórico." });
+        res.json(results);
+    });
+});
+
+// ==========================================
+// 4. ROTAS DO PAINEL ADMIN
+// ==========================================
+app.post('/api/consultoras', (req, res) => {
+    let { nome, email, telefone, cidade } = req.body;
+    const tel = telefone.replace(/\D/g, '');
+    if (!nome || tel.length !== 11) return res.status(400).send({ message: "Dados inválidos." });
+    const telFmt = `(${tel.slice(0,2)})${tel.slice(2,7)}-${tel.slice(7)}`;
+    db.query("SELECT * FROM consultoras WHERE email = ? OR telefone = ?", [email, telFmt], (err, results) => {
+        if (results && results.length > 0) return res.status(409).send({ message: "Duplicado." });
+        db.query("INSERT INTO consultoras (nome, email, telefone, cidade) VALUES (?, ?, ?, ?)", [nome, email, telFmt, cidade], (err, result) => {
+            if(err) return res.status(500).send({message: "Erro."});
+            res.status(201).send({ message: "Sucesso!", id: result.insertId });
+        });
+    });
+});
+
+app.get('/api/consultoras', (req, res) => {
+    db.query("SELECT * FROM consultoras ORDER BY id DESC", (e,r)=>res.json(r||[]));
+});
+
+app.post('/api/mentoria', (req, res) => {
+    const { nome, telefone, nivel, dificuldade } = req.body;
+    db.query("INSERT INTO mentoria_leads (nome, telefone, nivel, dificuldade) VALUES (?, ?, ?, ?)", [nome, telefone, nivel, dificuldade], (e)=> {
+        if(e) return res.status(500).send({message: "Erro"}); res.status(201).send({ message: "Sucesso!" });
+    });
+});
+
+app.get('/api/mentoria', (req, res) => {
+    db.query("SELECT * FROM mentoria_leads ORDER BY id DESC", (e,r)=>res.json(r||[]));
+});
+
+// ==========================================
+// 5. ROTAS DE GERENCIAMENTO DE RIFAS
+// ==========================================
+app.get('/api/rifas', (req, res) => {
+    const query = `
+        SELECT 
+            r.*,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM rifa_numeros rn 
+                WHERE rn.rifa_id = r.id 
+                AND rn.status = 'vendido'
+            ), 0) AS numeros_vendidos
+        FROM rifas r
+        ORDER BY r.id DESC
+    `;
+    
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Erro ao buscar rifas:', err);
+            return res.status(500).json({ message: 'Erro ao buscar rifas' });
+        }
+        res.json(results);
+    });
+});
+
+app.get('/api/rifas/:id/numeros', (req, res) => {
+    limparReservasExpiradas();
+    db.query("SELECT numero, status, comprador_nome FROM rifa_numeros WHERE rifa_id = ?", [req.params.id], (err, result) => res.json(result || []));
+});
+
+app.get('/api/rifas/:id/ranking', (req, res) => {
+    const rifaId = req.params.id;
+    const sql = `
+        SELECT comprador_nome, comprador_telefone, COUNT(numero) as total_numeros
+        FROM rifa_numeros
+        WHERE rifa_id = ? AND status = 'Pago'
+        GROUP BY comprador_telefone, comprador_nome
+        ORDER BY total_numeros DESC
+        LIMIT 3
+    `;
+    db.query(sql, [rifaId], (err, results) => {
+        if (err) return res.status(500).json({ message: "Erro ao buscar ranking." });
+        res.json(results);
+    });
+});
+
+app.post('/api/rifas', verifyToken, (req, res) => {
+    const { nome_premio, valor_numero, total_numeros, imagem_url } = req.body;
+    db.query('INSERT INTO rifas (nome_premio, total_numeros, valor_numero, imagem_url) VALUES (?, ?, ?, ?)', [nome_premio, total_numeros, valor_numero, imagem_url], (err, result) => {
+        if (err) return res.status(500).json({ error: 'Erro no banco' });
+        res.status(201).json({ message: 'Rifa cadastrada!', id: result.insertId });
+    });
+});
+
+app.put('/api/rifas/:id', verifyToken, (req, res) => {
+    const { id } = req.params;
+    const { nome_premio, valor_numero, total_numeros, imagem_url } = req.body;
+    db.query('UPDATE rifas SET nome_premio = ?, total_numeros = ?, valor_numero = ?, imagem_url = ? WHERE id = ?', [nome_premio, total_numeros, valor_numero, imagem_url, id], (err) => {
+        if (err) return res.status(500).json({ error: 'Erro ao atualizar' });
+        res.status(200).json({ message: 'Rifa atualizada!' });
+    });
+});
+
+app.delete('/api/rifas/:id', verifyToken, (req, res) => {
+    const { id } = req.params;
+    db.query('DELETE FROM rifa_numeros WHERE rifa_id = ?', [id], (err1) => {
+        if (err1) return res.status(500).json({ error: 'Erro ao limpar dados' });
+        db.query('DELETE FROM rifas WHERE id = ?', [id], (err2) => {
+            if (err2) return res.status(500).json({ error: 'Erro ao deletar' });
+            res.status(200).json({ message: 'Rifa deletada!' });
+        });
+    });
+});
+
+app.post('/api/rifas/:id/sortear', verifyToken, (req, res) => {
+    const rifaId = req.params.id;
+    db.query("SELECT numero, comprador_nome FROM rifa_numeros WHERE rifa_id = ? AND status = 'Pago'", [rifaId], (err, results) => {
+        if (err || results.length === 0) return res.status(400).json({ message: "Nenhum número pago encontrado." });
+        const vencedor = results[Math.floor(Math.random() * results.length)];
+        db.query("UPDATE rifas SET vencedor_numero = ?, data_sorteio = NOW() WHERE id = ?", [vencedor.numero, rifaId], (upErr) => {
+            if (upErr) return res.status(500).json({ message: "Erro ao salvar vencedor." });
+            res.json({ numero: vencedor.numero, ganhador: vencedor.comprador_nome });
+        });
+    });
+});
+
+app.get('/api/ranking-global', (req, res) => {
+    const sql = `
+        SELECT comprador_nome, COUNT(numero) as total_numeros
+        FROM rifa_numeros
+        WHERE status = 'Pago'
+          AND MONTH(data_reserva) = MONTH(CURRENT_DATE())
+          AND YEAR(data_reserva) = YEAR(CURRENT_DATE())
+        GROUP BY comprador_telefone, comprador_nome
+        ORDER BY total_numeros DESC
+        LIMIT 3
+    `;
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: "Erro ao buscar ranking global." });
+        res.json(results);
+    });
+});
+
+	// ==========================================
+// ROTA DE PAGAMENTO - INFINITEPAY
+// ==========================================
+app.post('/api/rifas/:id/pagar', async (req, res) => {
+    const rifaId = req.params.id;
+    const { numeros, nome, telefone, valorUnitario, tituloRifa, clienteId } = req.body;
+
+    if (!numeros || !numeros.length) {
+        return res.status(400).send({ message: "Selecione pelo menos um número." });
+    }
+
+    limparReservasExpiradas();
+
+    const placeholders = numeros.map(() => '?').join(',');
+    const queryVerifica = `SELECT numero FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders}) AND (status = 'vendido' OR status = 'reservado' OR status = 'Pago')`;
+
+    db.query(queryVerifica, [rifaId, ...numeros], async (err, results) => {
+        if (err) {
+            console.error('Erro ao verificar números:', err);
+            return res.status(500).send({ message: "Erro ao verificar disponibilidade." });
+        }
+
+        if (results && results.length > 0) {
+            const numerosIndisponiveis = results.map(r => r.numero);
+            return res.status(409).send({
+                message: `Números indisponíveis: ${numerosIndisponiveis.join(', ')}.`
+            });
+        }
+
+        try {
+            const total = Number(valorUnitario) * numeros.length;
+            const totalCentavos = Math.round(total * 100);
+            const infiniteTag = process.env.INFINITE_TAG;
+
+            const payload = {
+                handle: infiniteTag,
+                redirect_url: 'https://nataliaemiliatupper.cloud/rifas',
+                webhook_url: 'https://nataliaemiliatupper.cloud/api/webhook/infinitepay',
+                order_nsu: `RIFA-${rifaId}-${Date.now()}`,
+                items: [
+                    {
+                        quantity: numeros.length,
+                        price: totalCentavos,
+                        description: `${tituloRifa} - ${numeros.length} números`
+                    }
+                ],
+                customer: {
+                    name: nome || 'Cliente',
+                    email: 'cliente@email.com',
+                    phone_number: telefone || '11999999999'
+                }
+            };
+
+            console.log('🟡 Enviando para InfinitePay:', JSON.stringify(payload, null, 2));
+
+            const response = await fetch('https://api.infinitepay.io/invoices/public/checkout/links', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error('❌ Erro InfinitePay:', data);
+                return res.status(500).send({ message: "Erro ao gerar link de pagamento." });
+            }
+
+            const values = numeros.map(num => [rifaId, num, clienteId || null, nome, telefone, 'Reservado', data.invoice_id || '']);
+
+            db.query(
+                "INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?",
+                [values],
+                (dbErr) => {
+                    if (dbErr) {
+                        console.error('Erro ao inserir reserva:', dbErr);
+                        return res.status(500).send({ message: "Erro ao reservar números." });
+                    }
+
+                    res.json({ link_pagamento: data.url });
+
+                    const msgCobranca = `*Mentora Tupperware* 🎁\n\nOlá, ${nome}! Sua reserva na rifa *${tituloRifa}* foi recebida!\n\n🎟️ *Números:* ${numeros.join(', ')}\n💰 *Total:* R$ ${total.toFixed(2)}\n\n🔗 Link para pagamento:\n${data.url}\n\nBoa sorte! 🍀`;
+                    enviarMensagemZap(telefone, msgCobranca);
+                }
+            );
+
+        } catch (error) {
+            console.error('❌ Erro no checkout InfinitePay:', error);
+            res.status(500).send({ message: "Erro ao gerar link de pagamento." });
+        }
+    });
+});
+
+            const prefResponse = await preference.create(preferenceData);
+            const values = numeros.map(num => [rifaId, num, clienteId || null, nome, telefone, 'Reservado', prefResponse.id]);
+
+            db.query(
+                "INSERT INTO rifa_numeros (rifa_id, numero, cliente_id, comprador_nome, comprador_telefone, status, id_pagamento_externo) VALUES ?",
+                [values],
+                (dbErr) => {
+                    if (dbErr) {
+                        console.error('Erro ao inserir reserva:', dbErr);
+                        return res.status(500).send({ message: "Erro ao reservar números." });
+                    }
+
+                    res.json({ link_pagamento: prefResponse.init_point });
+
+                    const msgCobranca = `*Mentora Tupperware* 🎁\n\nOlá, ${nome}! Sua reserva na rifa *${tituloRifa}* foi recebida!\n\n🎟️ *Números:* ${numeros.join(', ')}\n💰 *Total:* R$ ${total.toFixed(2)}\n\n⚠️ Você tem 15 minutos para pagar. Link:\n${prefResponse.init_point}\n\nBoa sorte! 🍀`;
+                    enviarMensagemZap(telefone, msgCobranca);
+
+                    setTimeout(() => {
+                        db.query(
+                            "SELECT status FROM rifa_numeros WHERE id_pagamento_externo = ?",
+                            [prefResponse.id],
+                            (errTimer, resultsTimer) => {
+                                if (errTimer) return;
+                                if (resultsTimer && resultsTimer.length > 0) {
+                                    const aindaPendente = resultsTimer.some(r => r.status !== 'Pago' && r.status !== 'vendido');
+                                    if (aindaPendente && telefone) {
+                                        const msgRecuperacao = `⚠️ *SEU PIX VAI EXPIRAR!* ⚠️\n\nOlá, ${nome}! Notamos que você reservou números, mas o pagamento não foi concluído.\n\nCorre lá e finaliza o PIX antes que seus números sejam liberados. 🏃‍♀️💨\n\n🔗 *Link de Pagamento:* ${prefResponse.init_point}`;
+                                        enviarMensagemZap(telefone, msgRecuperacao);
+                                    }
+                                }
+                            }
+                        );
+                    }, 600000);
+                }
+            );
+        } catch (mpError) {
+            console.error('Erro no Mercado Pago:', mpError);
+            res.status(500).send({ message: "Erro ao gerar link de pagamento." });
+        }
+    });
+});
+
+	// ==========================================
+// WEBHOOK DA INFINITEPAY
+// ==========================================
+app.post('/api/webhook/infinitepay', async (req, res) => {
+    res.sendStatus(200);
+
+    try {
+        const webhookData = req.body;
+        console.log('📩 Webhook recebido:', webhookData);
+
+        const orderNsu = webhookData.order_nsu;
+        if (!orderNsu) {
+            console.error('❌ Webhook sem order_nsu');
+            return;
+        }
+
+        const infiniteTag = process.env.INFINITE_TAG;
+
+        const paymentCheck = await fetch('https://api.infinitepay.io/invoices/public/checkout/payment_check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                handle: infiniteTag,
+                order_nsu: orderNsu,
+                transaction_nsu: webhookData.transaction_nsu || '',
+                slug: webhookData.invoice_slug || ''
+            })
+        });
+
+        const paymentStatus = await paymentCheck.json();
+
+        if (paymentCheck.ok && paymentStatus.paid === true) {
+            console.log(`✅ Pagamento confirmado para ${orderNsu}`);
+
+            const rifaId = orderNsu.split('-')[1];
+            const numerosArray = webhookData.items?.map(item => item.quantity) || [];
+
+            if (rifaId && numerosArray.length > 0) {
+                const placeholders = numerosArray.map(() => '?').join(',');
+
+                db.query(`SELECT comprador_nome, comprador_telefone FROM rifa_numeros WHERE rifa_id = ? AND numero IN (${placeholders}) LIMIT 1`, [rifaId, ...numerosArray], (errBusca, resultsBusca) => {
+                    let zapComprador = null;
+                    let nomeComprador = 'Cliente';
+
+                    if (resultsBusca && resultsBusca.length > 0) {
+                        zapComprador = resultsBusca[0].comprador_telefone;
+                        nomeComprador = resultsBusca[0].comprador_nome;
+                    }
+
+                    const sqlUpdate = `UPDATE rifa_numeros SET status = 'Pago' WHERE rifa_id = ? AND numero IN (${placeholders})`;
+                    db.query(sqlUpdate, [rifaId, ...numerosArray], (errUpdate) => {
+                        if (!errUpdate) {
+                            db.query("UPDATE rifas SET numeros_vendidos = numeros_vendidos + ? WHERE id = ?", [numerosArray.length, rifaId]);
+                            console.log(`✅ Pagamento aprovado! Rifa ${rifaId}`);
+
+                            if (zapComprador) {
+                                const msgSucesso = `🎉 *PAGAMENTO APROVADO!* 🎉\n\nOlá, ${nomeComprador}! Confirmamos o seu pagamento. Seus números da sorte estão garantidos! 🍀\n\nAcompanhe o sorteio na aba 'Minha Conta' do nosso site. Boa sorte!`;
+                                enviarMensagemZap(zapComprador, msgSucesso);
+                            }
+                        }
+                    });
+                });
+            }
+        } else {
+            console.warn(`⚠️ Pagamento NÃO confirmado para ${orderNsu}`);
+        }
+
+    } catch (error) {
+        console.error('❌ Erro no webhook:', error);
+    }
+});
+
+// ==========================================
+// ROTA DE TESTE PARA ENVIAR MENSAGEM PARA O ADMIN
+// ==========================================
+app.post('/api/teste/admin-whatsapp', async (req, res) => {
+    const adminZap = process.env.ADMIN_WHATSAPP;
+    
+    if (!adminZap) {
+        return res.status(400).json({ message: "Número do admin não configurado." });
+    }
+
+    try {
+        const msg = `🧪 *TESTE DE MENSAGEM ADMIN*\n\nEsta é uma mensagem de teste enviada pelo sistema para validar a comunicação com o WhatsApp do administrador.\n\n✅ Se você recebeu esta mensagem, o sistema está funcionando!`;
+        
+        const enviado = await enviarMensagemZap(adminZap, msg);
+        
+        if (enviado) {
+            res.json({ message: "Mensagem enviada com sucesso para o admin." });
+        } else {
+            res.status(500).json({ message: "Falha ao enviar mensagem para o admin." });
+        }
+    } catch (error) {
+        console.error('❌ Erro no teste de admin:', error);
+        res.status(500).json({ message: "Erro ao enviar mensagem de teste." });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`✅ Conectado ao MySQL!`);
+});

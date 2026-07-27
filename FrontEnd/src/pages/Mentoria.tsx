@@ -3,7 +3,7 @@ import { User, Phone, Mail, ArrowRight, GraduationCap, Loader2, Sparkles } from 
 import { Card, Button } from '../components/UI';
 import toast from 'react-hot-toast';
 
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'http://179.197.236.219';
 
 export default function Mentoria() {
   const [isLoading, setIsLoading] = useState(false);
