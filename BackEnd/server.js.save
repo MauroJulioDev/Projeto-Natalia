@@ -7,8 +7,6 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const https = require('https');
-const fs = require('fs');
 
 const SECRET_KEY = process.env.JWT_SECRET;
 const app = express();
@@ -800,18 +798,11 @@ app.get('/api/pagamento/:id/status', (req, res) => {
     );
 });
 
-// Carregar certificados SSL
-const sslOptions = {
-    key: fs.readFileSync('/etc/letsencrypt/live/nataliaemiliatupper.cloud-0001/privkey.pem'),
-    cert: fs.readFileSync('/etc/letsencrypt/live/nataliaemiliatupper.cloud-0001/fullchain.pem')
-};
-
-// Servidor HTTP (simples)
+// ==========================================
+// 12. INICIAR SERVIDOR
+// ==========================================
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor HTTP rodando na porta ${PORT}`);
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
     console.log(`✅ Conectado ao MySQL!`);
-    console.log(`📦 Cache de rifas ativado (30s de duração)`);
+    console.log(`📦 Cache de rifas ativado (${CACHE_DURATION/1000}s de duração)`);
 });
-
-// Manter o HTTP para redirecionamento (opcional)
-// app.listen(3000, () => console.log('HTTP rodando na porta 3000'));

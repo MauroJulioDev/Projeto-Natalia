@@ -2,10 +2,12 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
-const QRCode = require('qrcode');
 
-console.log('🔄 Iniciando cliente WhatsApp...');
+console.log('🔄 Iniciando cliente WhatsApp otimizado...');
 
+// ==========================================
+// CONFIGURAÇÃO OTIMIZADA DO WHATSAPP
+// ==========================================
 const client = new Client({
     authStrategy: new LocalAuth({
         dataPath: path.join(__dirname, '.wwebjs_auth')
@@ -14,65 +16,62 @@ const client = new Client({
         executablePath: '/root/.cache/puppeteer/chrome/linux-146.0.7680.31/chrome-linux64/chrome',
         headless: true,
         args: [
+            // 🔥 CONFIGURAÇÕES BÁSICAS (já existentes)
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--disable-software-rasterizer',
+            
+            // 🔥 NOVAS OTIMIZAÇÕES DE MEMÓRIA
             '--disable-accelerated-2d-canvas',
             '--disable-accelerated-video-decode',
             '--disable-accelerated-video-encode',
+            '--disable-accelerated-mjpeg-decode',
+            
+            // 🔥 REDUZ CONSUMO DE CPU/MEMÓRIA
             '--max_old_space_size=512',
+            '--js-flags="--max-old-space-size=512"',
+            '--memory-pressure-off',
             '--disable-extensions',
             '--disable-plugins',
             '--disable-images',
+            '--disable-javascript-harmony',
+            
+            // 🔥 REDUZ PROCESSOS EM BACKGROUND
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-back-forward-cache',
+            '--disable-component-extensions-with-background-pages',
+            
+            // 🔥 OUTRAS OTIMIZAÇÕES
+            '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+            '--disable-ipc-flooding-protection',
+            '--disable-site-isolation-trials',
             '--single-process',
             '--disable-crash-reporter',
             '--disable-breakpad',
             '--disable-logging',
             '--log-level=3',
-            '--silent'
+            '--silent',
+            '--no-first-run',
+            '--no-default-browser-check'
         ],
-        protocolTimeout: 60000
-    }
-});
-
-// ==========================================
-// EVENTO QR CODE - SALVA EM ARQUIVO
-// ==========================================
-client.on('qr', async (qr) => {
-    console.log('📱 QR CODE PARA ESCANEAR:');
-    qrcode.generate(qr, { small: true });
-    
-    // 🔥 SALVAR QR CODE PARA ACESSO PÚBLICO
-    const fs = require('fs');
-    const QRCode = require('qrcode');
-    
-    // Salvar em texto (para debug)
-    try {
-        fs.writeFileSync('/var/www/mentora-tupperware/BackEnd/qrcode.txt', qr);
-        console.log('✅ QR Code salvo em texto');
-    } catch (err) {
-        console.error('❌ Erro ao salvar texto:', err);
-    }
-    
-    // Salvar em imagem PNG
-    try {
-        await QRCode.toFile('/var/www/mentora-tupperware/BackEnd/qrcode.png', qr, {
-            color: { dark: '#7B2FBE', light: '#FFFFFF' }, // Roxo Tupperware
-            width: 400,
-            margin: 2
-        });
-        console.log('✅ QR Code imagem atualizada!');
-        console.log('🌐 Acesse: https://nataliaemiliatupper.cloud/qrcode/qrcode.png');
-    } catch (err) {
-        console.error('❌ Erro ao salvar QR Code imagem:', err);
+        protocolTimeout: 60000, // 60 segundos (mantido)
+        defaultViewport: null,
+        ignoreHTTPSErrors: true
     }
 });
 
 // ==========================================
 // EVENTOS DO WHATSAPP
 // ==========================================
+client.on('qr', (qr) => {
+    console.log('📱 QR CODE PARA ESCANEAR:');
+    qrcode.generate(qr, { small: true });
+});
+
 client.on('ready', () => {
     console.log('✅ WhatsApp conectado com sucesso!');
     console.log(`🕐 ${new Date().toLocaleString()}`);
@@ -84,8 +83,6 @@ client.on('authenticated', () => {
 
 client.on('auth_failure', (msg) => {
     console.error('❌ Falha na autenticação:', msg);
-    console.log('🔄 Tentando reconectar com sessão salva...');
-    setTimeout(() => client.initialize(), 10000);
 });
 
 client.on('disconnected', (reason) => {
@@ -98,7 +95,7 @@ client.on('disconnected', (reason) => {
 });
 
 // ==========================================
-// FUNÇÃO PARA ENVIAR MENSAGEM
+// FUNÇÃO PARA ENVIAR MENSAGEM (OTIMIZADA)
 // ==========================================
 const enviarMensagemZap = async (telefone, mensagem) => {
     try {
@@ -112,8 +109,9 @@ const enviarMensagemZap = async (telefone, mensagem) => {
             numeroLimpo = `55${numeroLimpo}`;
         }
 
+        // Verifica se o cliente está pronto
         if (!client.info) {
-            console.log('⏳ WhatsApp não está pronto.');
+            console.log('⏳ WhatsApp não está pronto. Mensagem não enviada.');
             return false;
         }
 
@@ -134,27 +132,37 @@ const enviarMensagemZap = async (telefone, mensagem) => {
 };
 
 // ==========================================
-// LIMPEZA DE CACHE (a cada 2 horas)
+// LIMPEZA AUTOMÁTICA DE CACHE (a cada 2 horas)
 // ==========================================
 setInterval(() => {
     console.log('🧹 Limpando cache do WhatsApp...');
     try {
+        // Limpa cache do navegador via sistema de arquivos
         const cacheDirs = [
             '.wwebjs_auth/session/Default/Cache',
-            '.wwebjs_auth/session/Default/Code Cache'
+            '.wwebjs_auth/session/Default/Code Cache',
+            '.wwebjs_auth/session/Default/Service Worker/CacheStorage'
         ];
+        
         cacheDirs.forEach(dir => {
             const fullPath = path.join(__dirname, dir);
             if (fs.existsSync(fullPath)) {
                 fs.rmSync(fullPath, { recursive: true, force: true });
+                console.log(`✅ Cache limpo: ${dir}`);
             }
         });
-        console.log('✅ Cache limpo!');
+        console.log('✅ Limpeza de cache concluída!');
     } catch (e) {
         console.log('⚠️ Erro ao limpar cache:', e.message);
     }
-}, 7200000);
+}, 7200000); // 2 horas
 
+// ==========================================
+// INICIA O CLIENTE
+// ==========================================
 client.initialize();
 
-module.exports = { enviarMensagemZap, client };
+// ==========================================
+// EXPORTA A FUNÇÃO
+// ==========================================
+module.exports = { enviarMensagemZap };

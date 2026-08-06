@@ -3,7 +3,7 @@ import { User, Phone, Mail, ArrowRight, Briefcase, Loader2, Star } from 'lucide-
 import { Card, Button } from '../components/UI';
 import toast from 'react-hot-toast';
 
-const API_URL = (import.meta as any).env.VITE_API_URL || 'http://179.197.236.219';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'https://nataliaemiliatupper.cloud';
 
 export default function Consultora() {
   const [isLoading, setIsLoading] = useState(false);

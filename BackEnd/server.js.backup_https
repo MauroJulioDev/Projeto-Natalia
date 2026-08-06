@@ -806,9 +806,9 @@ const sslOptions = {
     cert: fs.readFileSync('/etc/letsencrypt/live/nataliaemiliatupper.cloud-0001/fullchain.pem')
 };
 
-// Servidor HTTP (simples)
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor HTTP rodando na porta ${PORT}`);
+// Criar servidor HTTPS
+https.createServer(sslOptions, app).listen(PORT, () => {
+    console.log(`🚀 Servidor HTTPS rodando na porta ${PORT}`);
     console.log(`✅ Conectado ao MySQL!`);
     console.log(`📦 Cache de rifas ativado (30s de duração)`);
 });
